@@ -1,0 +1,9 @@
+# ===== Core App =====
+streamlit==1.37.1
+pandas==2.2.2
+
+# ===== Data Fetch / Finance =====
+yfinance>=0.2.66
+
+# ===== Typing Helpers =====
+typing-extensions==4.11.0
