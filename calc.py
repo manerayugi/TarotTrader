@@ -412,8 +412,31 @@ def render_money_management_page():
             leverage = st.number_input("Leverage", value=1000, step=50, min_value=1, format="%d")
             custom_points = st.number_input("Stop Loss (Point) - กำหนดเอง", value=1000, step=1, min_value=0, format="%d")
 
-            st.caption("สูตร MaxLot = (ทุน × Leverage) / (Price × ContractSize)")
-            st.caption("สูตร Lot (ต่อระยะที่กำหนด) = ทุนที่มี / จำนวนจุด")
+            # เส้นคั่นบน (สั้นและอยู่กึ่งกลาง)
+            st.markdown("""
+            <div style='text-align:center; margin:12px 0 6px 0;'>
+            <hr style='width: 360px; border: 1px solid #555; margin: 8px auto;'/>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # สูตร (ใช้ st.latex เพื่อให้เรนเดอร์แน่นอน)
+            st.markdown("<div style='text-align:center; font-size:1.25rem;'>", unsafe_allow_html=True)
+            st.latex(r'''
+            \color{purple}{
+            \text{Lot}
+            =
+            \frac{\text{RiskAmount}}
+                {\text{Distance(points)}}
+            }
+            ''')
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # เส้นคั่นล่าง (สั้นและอยู่กึ่งกลาง)
+            st.markdown("""
+            <div style='text-align:center; margin:6px 0 12px 0;'>
+            <hr style='width: 360px; border: 1px solid #555; margin: 8px auto;'/>
+            </div>
+            """, unsafe_allow_html=True) 
 
         with right:
             max_lot_val = maxlot_theoretical(balance, float(leverage), float(price), XAUUSD_SPEC)
