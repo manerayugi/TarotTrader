@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 import streamlit as st
+import re
+import pandas as pd
 
 # ดึงราคาแบบ optional
 try:
@@ -30,8 +32,19 @@ XAUUSD_SPEC = SymbolSpec(
     pip_points=10
 )
 
+# สำหรับ BTCUSD ให้ point = 1 (ราคาเปลี่ยนทีละ 1), contract สมมุติ 1
+BTCUSD_SPEC = SymbolSpec(
+    name="BTCUSD",
+    contract_size=1.0,
+    min_lot=0.01,
+    lot_step=0.01,
+    price_point=1.0,
+    pip_points=1
+)
+
 SYMBOL_PRESETS: Dict[str, SymbolSpec] = {
     "XAUUSD": XAUUSD_SPEC,
+    "BTCUSD": BTCUSD_SPEC,
 }
 
 
@@ -40,6 +53,7 @@ def fetch_price_yf(symbol_name: str) -> Optional[float]:
     """
     ดึงราคาโดยประมาณจาก yfinance
     - สำหรับทองคำ: ใช้ XAUT-USD (ราคาค่อนข้างใกล้เคียงกับตลาด)
+    - (ยังไม่ได้ map สำหรับ BTCUSD ตรง ๆ หากต้องการค่อยเพิ่มภายหลัง)
     """
     if yf is None:
         return None
@@ -159,9 +173,345 @@ def lots_from_stops(risk_amount: float, stops_points: Iterable[int]) -> List[Tup
         out.append((p, lots))
     return out
 
+
+# ========== GMK Signal → Lot ==========
+_SYMBOL_ALIASES = {
+    "XAUUSD": "XAUUSD",
+    "XAU": "XAUUSD",
+    "GOLD": "XAUUSD",
+    "GOLDUSD": "XAUUSD",
+    "BTCUSD": "BTCUSD",
+    "BTC": "BTCUSD",
+    "XBTUSD": "BTCUSD",
+}
+_DIR_ALIASES = {"BUY": "LONG", "LONG": "LONG", "SELL": "SHORT", "SHORT": "SHORT"}
+
+def _norm_symbol(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    s = raw.upper().replace(".MG", "")
+    return _SYMBOL_ALIASES.get(s, s if s in SYMBOL_PRESETS else None)
+# ===== (แทนที่ของเดิม) parser รองรับ .mg / SL=/ TP1..TP6= / timeframe =====
+def parse_gmk_signal(text: str):
+    """
+    รองรับตัวอย่าง:
+    XAUUSD.mg M5 SELL @3774.03
+    SL=3785.34
+    TP1=3771.77
+    ...
+    หรือ
+    BTCUSD.mg M15 BUY @108543.65
+    SL=108110.15
+    TP1=108630.35 ...
+    """
+    s = text.strip()
+    u = s.upper()
+
+    # symbol (+ ตัด .mg ออกถ้ามี)
+    m_sym = re.search(r"\b([A-Z]{3,10})(?:\.MG)?\b", u)
+    symbol = _norm_symbol(m_sym.group(1)) if m_sym else None
+
+    # timeframe (optional)
+    m_tf = re.search(r"\b(M\d+|H\d+|D\d+|W\d+)\b", u)
+    timeframe = m_tf.group(1) if m_tf else None
+
+    # direction
+    direction = None
+    for k, v in _DIR_ALIASES.items():
+        if re.search(rf"\b{k}\b", u):
+            direction = v
+            break
+
+    # entry (หลัง @) เช่น @3774.03
+    entry = None
+    m_entry = re.search(r"@\s*([0-9]+(?:\.[0-9]+)?)", u)
+    if m_entry:
+        entry = float(m_entry.group(1))
+    else:
+        # fallback: หาเลขตัวแรกในสตริง
+        m0 = re.search(r"\b([0-9]+(?:\.[0-9]+)?)\b", u)
+        entry = float(m0.group(1)) if m0 else None
+
+    # SL รองรับ "SL=xxxx" หรือ "SL xxxx"
+    sl = None
+    msl = re.search(r"\bSL\s*=?\s*([0-9]+(?:\.[0-9]+)?)", u)
+    if msl:
+        sl = float(msl.group(1))
+
+    # TP list รองรับ "TP1=xxx" ... "TP6=xxx" และกรณีไม่มี "=" ก็พยายามจับ
+    tp_matches = re.findall(r"\bTP\d+\s*=?\s*([0-9]+(?:\.[0-9]+)?)", u)
+    tps = [float(x) for x in tp_matches] if tp_matches else []
+    # เผื่อ format ไม่มี index (เช่น "TP=xxxx")
+    if not tps:
+        tp_single = re.findall(r"\bTP\s*=?\s*([0-9]+(?:\.[0-9]+)?)", u)
+        tps = [float(x) for x in tp_single] if tp_single else []
+
+    return {
+        "symbol": symbol,
+        "direction": direction,    # "LONG" | "SHORT"
+        "entry": entry,
+        "sl": sl,
+        "tps": tps,                # list[float]
+        "timeframe": timeframe,
+        "raw": text,
+    }
+
+def _signal_spec(symbol_name: str) -> SymbolSpec:
+    return SYMBOL_PRESETS.get(symbol_name, XAUUSD_SPEC)
+
+def _dist_points(a: Optional[float], b: Optional[float], spec: SymbolSpec) -> float:
+    if a is None or b is None:
+        return 0.0
+    return abs(float(a) - float(b)) / float(spec.price_point)
+
+
+def _tp_points(entry: Optional[float], tp: Optional[float], spec: SymbolSpec) -> float:
+    if entry is None or tp is None:
+        return 0.0
+    return abs(float(tp) - float(entry)) / float(spec.price_point)
+
+
+_DEFAULT_RISK_SET = [1, 2, 3, 4, 5, 10, 15, 20, 30, 50, 100]
+
+
+def _risk_table_rows(balance: float, risk_set, dist_points: float, tp_points: float, spec: SymbolSpec):
+    rows = []
+    vpp = value_per_point_per_lot(spec)  # $/point/lot
+    for rp in risk_set:
+        risk_amt = balance * (rp / 100.0)
+        if dist_points > 0 and vpp > 0:
+            lots = risk_amt / (dist_points * vpp)
+            pnl_sl = -pnl_usd(lots, dist_points, spec)
+            pnl_tp = pnl_usd(lots, tp_points, spec) if tp_points > 0 else None
+        else:
+            lots, pnl_sl, pnl_tp = 0.0, 0.0, None
+        rows.append({
+            "Risk (%)": rp,
+            "Risk ($) @SL": risk_amt,
+            "Lot": lots,
+            "P/L @SL ($)": pnl_sl,
+            "P/L @TP ($)": pnl_tp
+        })
+    return rows
+
+
+def render_signal_tab():
+    st.subheader("📨 GMK Signal → Lot (คำนวณจากความเสี่ยง)")
+
+    # ---------- Layout: ซ้ายกรอก | ขวาตาราง ----------
+    left, right = st.columns([1, 1.2])
+
+    with left:
+        st.markdown("#### ข้อความสัญญาณ")
+        sig_text = st.text_area(
+            "วางสัญญาณที่นี่",
+            value=("XAUUSD.mg M5 SELL @3774.03\n"
+                   "SL=3785.34\n"
+                   "TP1=3771.77\nTP2=3769.51\nTP3=3764.98\nTP4=3760.46\nTP5=3755.93\nTP6=3751.41"),
+            height=140,
+            help="รองรับรูปแบบ .mg / SL=... / TP1..TP6=... (ค่าที่พาร์สได้สามารถแก้ไขในฟอร์มด้านล่าง)"
+        )
+        parsed = parse_gmk_signal(sig_text)
+
+        # เลือกสัญลักษณ์/ทิศทาง
+        c1, c2 = st.columns(2)
+        with c1:
+            symbol_name = st.selectbox(
+                "Symbol",
+                options=list(SYMBOL_PRESETS.keys()),
+                index=list(SYMBOL_PRESETS.keys()).index(parsed["symbol"]) if parsed.get("symbol") in SYMBOL_PRESETS else 0
+            )
+        with c2:
+            direction = st.selectbox(
+                "Direction",
+                options=["LONG", "SHORT"],
+                index=0 if parsed.get("direction") == "LONG" else 1 if parsed.get("direction") == "SHORT" else 0
+            )
+
+        spec = _signal_spec(symbol_name)
+
+        # Entry / SL / TP (ให้แก้เองได้)
+        c3, c4 = st.columns(2)
+        with c3:
+            entry = st.number_input("Entry", value=float(parsed.get("entry") or 0.0), step=0.01, min_value=0.0)
+            sl    = st.number_input("SL",    value=float(parsed.get("sl")    or 0.0), step=0.01, min_value=0.0)
+        with c4:
+            tp_list = parsed.get("tps") or []
+            selected_tp_val: Optional[float] = None
+            if tp_list:
+                options = [f"TP{i+1} — {tp_list[i]:,.2f}" for i in range(len(tp_list))]
+                idx = st.selectbox("TP ที่ต้องการ", options=list(range(len(tp_list))), format_func=lambda i: options[i])
+                selected_tp_val = tp_list[idx]
+            # ช่องให้กรอก TP เอง (override)
+            manual_tp = st.number_input("หรือกรอก TP เอง (ถ้าต้องการ)", value=0.0, step=0.01, min_value=0.0)
+            if manual_tp > 0:
+                selected_tp_val = manual_tp
+
+            balance = st.number_input("ทุน ($)", value=1000.0, step=100.0, min_value=0.0)
+
+        # กำหนด Risk
+        loss_mode = st.selectbox("กรอก Risk เป็น", ["%", "$"], index=0)
+        if loss_mode == "%":
+            loss_val = st.number_input("Risk (%)", value=1.0, step=0.25, min_value=0.0)
+            risk_amount = balance * (loss_val / 100.0)
+            st.caption(f"Risk ที่ใช้คำนวณ ≈ **${risk_amount:,.2f}**")
+        else:
+            loss_val = st.number_input("Risk ($)", value=10.0, step=5.0, min_value=0.0)
+            risk_amount = loss_val
+            st.caption(f"คิดเป็นสัดส่วน ≈ **{(risk_amount/balance*100 if balance>0 else 0):.2f}%**")
+
+        # สูตร + ข้อมูลประกอบ
+        st.markdown("""
+        <div style='text-align:center; margin:12px 0 8px 0;'>
+          <hr style='width: 360px; border: 1px solid #666; margin: 8px auto;'/>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center; color:#FFD700; font-size:1.2rem;'>", unsafe_allow_html=True)
+        st.latex(r'''
+            \color{purple}{\text{Lot} = \frac{\text{Risk Amount}}{\text{Distance to SL (points)} \times (\$/\text{point}/\text{lot})}}
+        ''')
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style='text-align:center; margin:8px 0;'>
+          <hr style='width: 360px; border: 1px solid #666; margin: 8px auto;'/>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ค่าที่ใช้คำนวณ (จากค่าปัจจุบันในฟอร์ม)
+        dist_points_sl = _dist_points(entry, sl, spec)
+        vpp = value_per_point_per_lot(spec)
+        st.caption(
+            f"Distance @SL ≈ **{dist_points_sl:,.0f} points**, "
+            f"Value ≈ **${vpp:.2f}/point/lot**"
+        )
+
+        # ปุ่มคำนวณ
+        lots_calc = 0.0
+        if st.button("คำนวณ Lot ตาม Risk ที่กรอก", type="primary"):
+            # ตรวจสอบอินพุตพื้นฐาน
+            spec = _signal_spec(symbol_name)
+            vpp = value_per_point_per_lot(spec)
+            dist_points_sl = _dist_points(entry, sl, spec)
+            dist_points_sel_tp = _dist_points(entry, selected_tp_val, spec) if selected_tp_val else 0.0
+
+            if dist_points_sl <= 0 or vpp <= 0:
+                st.error("กรุณาตรวจสอบ Entry/SL ให้ถูกต้อง (ระยะไป SL ต้องมากกว่า 0)")
+            else:
+                # 1) คำนวณ lots จาก Risk ที่กรอก
+                lots = risk_amount / (dist_points_sl * vpp)
+
+                # 2) P/L @SL (ติดลบ)
+                pnl_stop = -pnl_usd(lots, dist_points_sl, spec)
+
+                # 3) P/L @TP (ที่ผู้ใช้เลือก/กรอกเอง)
+                pnl_take_sel = (
+                    pnl_usd(lots, dist_points_sel_tp, spec)
+                    if dist_points_sel_tp and dist_points_sel_tp > 0 else None
+                )
+
+                # แสดงสรุป lot + metrics SL/TP(เลือก)
+                st.success(f"Lot ที่ควรออก ≈ **{lots:.2f} lot**")
+                st.caption(f"Risk = **${risk_amount:,.2f}**, Distance @SL = **{dist_points_sl:,.0f} points**, $/pt/lot = **${vpp:.2f}**")
+
+                m1, m2 = st.columns(2)
+                with m1:
+                    st.metric("P/L @SL ($)", f"{pnl_stop:,.2f}")
+                with m2:
+                    if pnl_take_sel is not None:
+                        st.metric(f"P/L @TP (เลือก {selected_tp_val:,.2f})", f"{pnl_take_sel:,.2f}")
+                    else:
+                        st.metric("P/L @TP (เลือก)", "-")
+
+                # 4) P/L @TP1..TP6 (ถ้ามีในสัญญาณ)
+                tp_values = (parsed.get("tps") or [])[:6]
+                if tp_values:
+                    rows = []
+                    for i, tpv in enumerate(tp_values, start=1):
+                        d_tp = _dist_points(entry, tpv, spec)
+                        pnl_tp = pnl_usd(lots, d_tp, spec) if d_tp > 0 else 0.0
+                        rows.append({
+                            "TP": f"TP{i}",
+                            "Price": tpv,
+                            "Distance (pts)": d_tp,
+                            "P/L ($)": pnl_tp
+                        })
+                    df_tp = pd.DataFrame(rows)
+                    sty = (
+                        df_tp.style
+                            .format({
+                                "Price": "{:,.2f}",
+                                "Distance (pts)": "{:,.0f}",
+                                "P/L ($)": "{:,.2f}",
+                            })
+                            .set_table_styles([{'selector': 'th', 'props': [('text-align', 'center')]}])
+                            .set_properties(**{'text-align': 'center'})
+                    )
+                    st.markdown("**P/L @TP1–TP6 (ตามสัญญาณ)**")
+                    st.dataframe(sty, use_container_width=True, height=min(330, (len(df_tp) + 2) * 33))
+
+        # เก็บค่า lot ไปใช้ฝั่งขวา
+        st.session_state.setdefault("signal_lot_calc", 0.0)
+        st.session_state["signal_lot_calc"] = lots_calc
+
+    # ตารางฝั่งขวา: แสดง P/L ที่ TP1..TP6 ตาม lot ที่คำนวณได้ (เอา P/L SL ออก)
+        # ตารางฝั่งขวา: คำนวณ lot ตามความเสี่ยง (Risk set) + P/L @TP1..TP6
+    with right:
+        st.markdown("#### ตารางคำนวณ Lot ตามความเสี่ยง + ผลลัพธ์ที่ TP แต่ละระดับ")
+
+        # ใช้ค่าจากฝั่งซ้าย (entry/sl/spec/balance/…)
+        dist_points_sl = _dist_points(entry, sl, spec)
+        vpp = value_per_point_per_lot(spec)
+        tp_values = parsed.get("tps") or []   # ตามสัญญาณที่วาง (สูงสุด 6 ค่า)
+        tp_values = tp_values[:6]
+
+        # เตรียมคอลัมน์ TP (หัวตาราง)
+        tp_cols = [f"P/L @TP{i+1} ($)" for i in range(len(tp_values))]
+
+        rows = []
+        # ชุดความเสี่ยงมาตรฐาน
+        for rp in _DEFAULT_RISK_SET:
+            risk_amt = balance * (rp / 100.0)
+            if dist_points_sl > 0 and vpp > 0:
+                lots = risk_amt / (dist_points_sl * vpp)
+            else:
+                lots = 0.0
+
+            # คำนวณ P/L แต่ละ TP จาก lot เดียวกัน (ระยะ = |TP - Entry|)
+            pl_tps = []
+            for tp in tp_values:
+                tp_pts = _tp_points(entry, tp, spec)
+                pnl_tp = pnl_usd(lots, tp_pts, spec) if lots > 0 else 0.0
+                pl_tps.append(pnl_tp)
+
+            row = {
+                "Risk (%)": rp,
+                "Risk ($)": risk_amt,
+                "Lot": lots,
+            }
+            for i, pnl in enumerate(pl_tps):
+                row[tp_cols[i]] = pnl
+            rows.append(row)
+
+        if rows:
+            df = pd.DataFrame(rows)
+
+            # ฟอร์แมตตัวเลข
+            fmt_map = {"Risk (%)": "{:.0f}", "Risk ($)": "{:,.2f}", "Lot": "{:.2f}"}
+            for c in tp_cols:
+                fmt_map[c] = "{:,.2f}"
+
+            sty = (
+                df.style
+                  .format(fmt_map, na_rep="-")
+                  .set_table_styles([{'selector': 'th', 'props': [('text-align', 'center')]}])
+                  .set_properties(**{'text-align': 'center'})
+            )
+            st.dataframe(sty, use_container_width=True, height=(len(df)+2)*33)
+        else:
+            st.info("ไม่มี TP ในสัญญาณที่วาง — ใส่ TP ในข้อความ หรือกรอก TP เองทางซ้าย (ตารางฝั่งขวาแสดงตาม TP ของสัญญาณ)")
+
 # ===== UI helper (เรียกจาก streamlit_app.py) =====
 def render_money_management_page():
-    import streamlit as st
     import pandas as pd
 
     st.header("💰 Money Management")
@@ -169,7 +519,7 @@ def render_money_management_page():
     if "mm_tab" not in st.session_state:
         st.session_state.mm_tab = "sizing"
 
-    tabs = st.columns([1.6, 1.4, 1.4, 3])
+    tabs = st.columns([1.6, 1.6, 1.6, 3])
     with tabs[0]:
         if st.button("🧮 การออก Lot", use_container_width=True):
             st.session_state.mm_tab = "sizing"
@@ -177,6 +527,9 @@ def render_money_management_page():
         if st.button("📏 ระยะ SL → Lot", use_container_width=True):
             st.session_state.mm_tab = "sl"
     with tabs[2]:
+        if st.button("📨 GMK Signal → Lot", use_container_width=True):
+            st.session_state.mm_tab = "signal"
+    with tabs[3]:
         if st.button("🧪 (สำรองหน้าอื่น)", use_container_width=True):
             st.session_state.mm_tab = "tbd2"
 
@@ -259,7 +612,7 @@ def render_money_management_page():
                 <li>• <b>Leverage</b> — อัตราทดที่ใช้ (เช่น 1:1000 → ใส่ค่า 1000)</li>
                 <li>• <b>Price</b> — ราคาปัจจุบันของสินค้าที่เทรด</li>
                 <li>• <b>ContractSize</b> — ขนาดสัญญาของสินค้านั้น (เช่น XAUUSD = 100)</li>
-                <li>• <b>Free Margin %</b> — เปอร์เซ็นต์ทุนที่กันไว้เพื่อความปลอดภัย ( 20 คือ ใช้ทุนจริง 80% และอีก 20% จะถูกเก็บเป็น Free Margin เพื่อความปลอดภัย)</li>
+                <li>• <b>Free Margin %</b> — เปอร์เซ็นต์กันไว้เพื่อความปลอดภัย</li>
             </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -282,7 +635,7 @@ def render_money_management_page():
         </div>
         """, unsafe_allow_html=True)
 
-        # สูตร (ใช้ st.latex เพื่อให้เรนเดอร์แน่นอน)
+        # สูตร
         st.markdown("<div style='text-align:center; font-size:1.25rem;'>", unsafe_allow_html=True)
         st.latex(r'''
         \color{purple}{
@@ -294,7 +647,7 @@ def render_money_management_page():
         ''')
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # เส้นคั่นล่าง (สั้นและอยู่กึ่งกลาง)
+        # เส้นคั่นล่าง
         st.markdown("""
         <div style='text-align:center; margin:6px 0 12px 0;'>
         <hr style='width: 360px; border: 1px solid #555; margin: 8px auto;'/>
@@ -302,10 +655,8 @@ def render_money_management_page():
         """, unsafe_allow_html=True) 
         
         u1, u2, u3, u4 = st.columns([1, 1, 1, 1.6])
-        # --- Column 1: เลือกหน่วย ---
         with u1:
             unit = st.selectbox("หน่วยระยะ", ["points", "pips"], index=0)
-        # --- Column 2: ระยะ Stop ---
         with u2:
             distance_input = st.number_input(
                 f"ระยะ Stop Loss ({unit})",
@@ -314,7 +665,6 @@ def render_money_management_page():
                 min_value=0,
                 format="%d"
             )
-        # --- Column 3: Risk Setting ---
         with u3:
             mode_safe = st.toggle("โหมดปลอดภัย (Risk%)", value=True)
             risk_percent = st.number_input(
@@ -324,8 +674,6 @@ def render_money_management_page():
                 min_value=0.0, 
                 disabled=not mode_safe
             )
-        
-        # --- Column 4: คำอธิบายตัวแปร ---
         with u4:
             st.markdown("""
             <div style='display:flex; align-items:center; height:100%; justify-content:left;'>
@@ -338,33 +686,24 @@ def render_money_management_page():
             </div>
             """, unsafe_allow_html=True)
 
-
-        # --- แปลงหน่วยและสูตร ---
         distance_points = float(distance_input) * (spec.pip_points if unit == "pips" else 1.0)
         vpp = value_per_point_per_lot(spec)
-        
         st.caption(f"คำนวณจากสูตร: lot = (ทุนที่ยอมเสีย) / (ระยะ {distance_points:.0f} points × ${vpp:.2f}/point/lot)")
 
         if st.button("คำนวณ OptimalLot"):
-            # 1) คำนวณ Risk Amount
             risk_amount = balance * (risk_percent / 100.0) if (mode_safe and risk_percent > 0) else balance
-
-            # 2) lot แบบดิบจากสูตร
             lots_raw = risk_amount / (distance_points * vpp) if (distance_points > 0 and vpp > 0) else 0.0
 
-            # 3) ปัดให้เข้ากับ lot_step และไม่ต่ำกว่า min_lot
             import math
             step = getattr(spec, "lot_step", 0.01)
             min_lot = getattr(spec, "min_lot", 0.01)
             lots_adj = max(min_lot, math.floor(lots_raw / step) * step if step > 0 else lots_raw)
 
-            # 4) จำกัดไม่ให้เกิน MaxLot เชิงทฤษฎี (ต้องมีตัวแปร price/leverage อยู่ในสโคปเดียวกัน)
             maxlot_theo = maxlot_theoretical(balance, float(leverage), float(price), spec) if (price > 0 and leverage > 0) else 0.0
             lots_final = min(lots_adj, maxlot_theo) if maxlot_theo > 0 else lots_adj
 
             pnl_stop = -pnl_usd(lots_final, distance_points, spec)
 
-            # แสดงผลแบบโปร่งใส
             st.info(f"Risk Amount: ${risk_amount:,.2f} | Distance: {distance_points:,.0f} points | $/pt/lot: ${vpp:.2f}")
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -412,14 +751,12 @@ def render_money_management_page():
             leverage = st.number_input("Leverage", value=1000, step=50, min_value=1, format="%d")
             custom_points = st.number_input("Stop Loss (Point) - กำหนดเอง", value=1000, step=1, min_value=0, format="%d")
 
-            # เส้นคั่นบน (สั้นและอยู่กึ่งกลาง)
+            # สูตร
             st.markdown("""
             <div style='text-align:center; margin:12px 0 6px 0;'>
             <hr style='width: 360px; border: 1px solid #555; margin: 8px auto;'/>
             </div>
             """, unsafe_allow_html=True)
-
-            # สูตร (ใช้ st.latex เพื่อให้เรนเดอร์แน่นอน)
             st.markdown("<div style='text-align:center; font-size:1.25rem;'>", unsafe_allow_html=True)
             st.latex(r'''
             \color{purple}{
@@ -430,8 +767,6 @@ def render_money_management_page():
             }
             ''')
             st.markdown("</div>", unsafe_allow_html=True)
-
-            # เส้นคั่นล่าง (สั้นและอยู่กึ่งกลาง)
             st.markdown("""
             <div style='text-align:center; margin:6px 0 12px 0;'>
             <hr style='width: 360px; border: 1px solid #555; margin: 8px auto;'/>
@@ -476,5 +811,10 @@ def render_money_management_page():
                 st.write(f"Stop Loss (Point): **{custom_points:,}** → Lot ที่ควรออก ≈ **{custom_lot:.2f} lot**")
                 if exceeds_custom:
                     st.warning("ค่าที่คำนวณเกิน MaxLot ที่เปิดได้ในตอนนี้")
+
+    # ---------------- Tab 3: GMK Signal → Lot ----------------
+    elif st.session_state.mm_tab == "signal":
+        render_signal_tab()
+
     else:
         st.info("เลือกหน้าฟังก์ชันอื่น ๆ ได้ในอนาคต (ยังไม่เปิดใช้งาน)")
