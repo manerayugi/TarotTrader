@@ -157,3 +157,79 @@ def fetch_price_yf(symbol_hint: str) -> Optional[float]:
         return None
     except Exception:
         return None
+
+# ======== Auth (SQLite + PBKDF2-HMAC) ========
+import sqlite3, os, hashlib, secrets, time
+from typing import Optional, Dict, Any
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
+
+def _conn():
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
+
+def ensure_db():
+    with _conn() as con:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS users(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash BLOB NOT NULL,
+            salt BLOB NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at REAL NOT NULL
+        )
+        """)
+        con.commit()
+
+def _hash_pw(password: str, salt: bytes) -> bytes:
+    # 200k rounds PBKDF2-HMAC-SHA256
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200_000)
+
+def create_user(username: str, password: str, role: str = "user") -> bool:
+    salt = secrets.token_bytes(16)
+    pw_hash = _hash_pw(password, salt)
+    try:
+        with _conn() as con:
+            con.execute("INSERT INTO users(username,password_hash,salt,role,created_at) VALUES(?,?,?,?,?)",
+                        (username, pw_hash, salt, role, time.time()))
+            con.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+def verify_login(username: str, password: str) -> Optional[Dict[str, Any]]:
+    with _conn() as con:
+        cur = con.execute("SELECT id,username,password_hash,salt,role FROM users WHERE username=?", (username,))
+        row = cur.fetchone()
+    if not row:
+        return None
+    uid, uname, pw_hash_db, salt, role = row
+    if _hash_pw(password, salt) == pw_hash_db:
+        return {"id": uid, "username": uname, "role": role}
+    return None
+
+def list_users() -> list[tuple]:
+    with _conn() as con:
+        cur = con.execute("SELECT id,username,role,datetime(created_at,'unixepoch') FROM users ORDER BY id")
+        return cur.fetchall()
+
+def delete_user(username: str) -> bool:
+    with _conn() as con:
+        cur = con.execute("DELETE FROM users WHERE username=?", (username,))
+        con.commit()
+        return cur.rowcount > 0
+
+def change_password(username: str, new_password: str) -> bool:
+    salt = secrets.token_bytes(16)
+    pw_hash = _hash_pw(new_password, salt)
+    with _conn() as con:
+        cur = con.execute("UPDATE users SET password_hash=?, salt=? WHERE username=?", (pw_hash, salt, username))
+        con.commit()
+        return cur.rowcount > 0
+
+def ensure_initial_admin() -> bool:
+    """ถ้ายังไม่มีผู้ใช้เลย ให้คืน True เพื่อให้หน้าแรกสร้าง admin ได้"""
+    with _conn() as con:
+        cur = con.execute("SELECT COUNT(*) FROM users")
+        n = cur.fetchone()[0]
+    return n == 0
