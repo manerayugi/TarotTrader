@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
+import streamlit as st
 
 # ดึงราคาแบบ optional
 try:
@@ -197,7 +198,7 @@ def render_money_management_page():
         spec = SYMBOL_PRESETS[symbol_name]
 
         with right:
-            st.write("สเปกสัญญา")
+            st.write("Contract Info")
             st.caption(
                 f"- Contract size: {spec.contract_size}\n"
                 f"- Min lot: {spec.min_lot} | Step: {spec.lot_step}\n"
@@ -225,6 +226,23 @@ def render_money_management_page():
 
         # 3) Max Lot
         st.markdown("### 1) Max Lot จากทุน + Leverage")
+        st.markdown("""
+        <div style='text-align:center; margin:20px 0;'>
+        <hr style='width: 320px; border: 1px solid #666; margin: 10px auto;'/>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<div style='text-align:center; color:#FFD700; font-size:1.4rem;'>", unsafe_allow_html=True)
+        st.latex(r'''
+            \color{purple}{\text{MaxLot} = \frac{\text{ทุน(USD)} \times \text{Leverage}}{\text{Price} \times \text{ContractSize}}}
+        ''')
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style='text-align:center; margin:10px 0;'>
+        <hr style='width: 320px; border: 1px solid #666; margin: 10px auto;'/>
+        </div>
+        """, unsafe_allow_html=True)
         cA, cB, cC, cD = st.columns([1, 1, 1, 1.6])
         with cA:
             balance = st.number_input("ทุน ($)", value=1000.0, step=100.0, min_value=0.0)
@@ -234,7 +252,17 @@ def render_money_management_page():
             buffer_pct_ui = st.number_input("กันไว้ (Free Margin %)", value=0.0, step=1.0, min_value=0.0, max_value=90.0)
             buffer_pct = buffer_pct_ui / 100.0
         with cD:
-            st.caption("สูตร: Maxlot = (ทุน * Leverage) / (Price * ContractSize)")
+            st.markdown("""
+            <div style='display:flex; align-items:center; height:100%; justify-content:center;'>
+            <ul style='list-style-type:none; font-size:1rem; line-height:1.8; margin: 0; padding: 0; color:#9CA3AF;'>
+                <li>• <b>ทุน($)</b> — มูลค่าทุนในบัญชี (Balance)</li>
+                <li>• <b>Leverage</b> — อัตราทดที่ใช้ (เช่น 1:1000 → ใส่ค่า 1000)</li>
+                <li>• <b>Price</b> — ราคาปัจจุบันของสินค้าที่เทรด</li>
+                <li>• <b>ContractSize</b> — ขนาดสัญญาของสินค้านั้น (เช่น XAUUSD = 100)</li>
+                <li>• <b>Free Margin %</b> — เปอร์เซ็นต์ทุนที่กันไว้เพื่อความปลอดภัย ( 20 คือ ใช้ทุนจริง 80% และอีก 20% จะถูกเก็บเป็น Free Margin เพื่อความปลอดภัย)</li>
+            </ul>
+            </div>
+            """, unsafe_allow_html=True)
 
         if st.button("คำนวณ MaxLot", type="primary"):
             m1 = margin_per_1lot(price, float(leverage), spec) if (price > 0 and leverage > 0) else 0.0
@@ -247,43 +275,110 @@ def render_money_management_page():
 
         # 4) Optimal Lot
         st.markdown("### 2) Optimal Lot จากระยะที่ทนได้")
+        # เส้นคั่นบน (สั้นและอยู่กึ่งกลาง)
+        st.markdown("""
+        <div style='text-align:center; margin:12px 0 6px 0;'>
+        <hr style='width: 360px; border: 1px solid #555; margin: 8px auto;'/>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # สูตร (ใช้ st.latex เพื่อให้เรนเดอร์แน่นอน)
+        st.markdown("<div style='text-align:center; font-size:1.25rem;'>", unsafe_allow_html=True)
+        st.latex(r'''
+        \color{purple}{
+        \text{OptimalLot}
+        =
+        \frac{\text{ทุน(USD)}}
+            {\text{Distance(points)} \times (\$/\text{point}/\text{lot})}
+        }
+        ''')
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # เส้นคั่นล่าง (สั้นและอยู่กึ่งกลาง)
+        st.markdown("""
+        <div style='text-align:center; margin:6px 0 12px 0;'>
+        <hr style='width: 360px; border: 1px solid #555; margin: 8px auto;'/>
+        </div>
+        """, unsafe_allow_html=True) 
+        
         u1, u2, u3, u4 = st.columns([1, 1, 1, 1.6])
+        # --- Column 1: เลือกหน่วย ---
         with u1:
             unit = st.selectbox("หน่วยระยะ", ["points", "pips"], index=0)
+        # --- Column 2: ระยะ Stop ---
         with u2:
             distance_input = st.number_input(
-                f"ระยะ Stop ({unit})",
+                f"ระยะ Stop Loss ({unit})",
                 value=10000,
                 step=1,
                 min_value=0,
                 format="%d"
             )
+        # --- Column 3: Risk Setting ---
         with u3:
             mode_safe = st.toggle("โหมดปลอดภัย (Risk%)", value=True)
+            risk_percent = st.number_input(
+                "Risk ต่อไม้ (%)", 
+                value=1.0, 
+                step=0.25, 
+                min_value=0.0, 
+                disabled=not mode_safe
+            )
+        
+        # --- Column 4: คำอธิบายตัวแปร ---
         with u4:
-            risk_percent = st.number_input("Risk ต่อไม้ (%)", value=1.0, step=0.25, min_value=0.0, disabled=not mode_safe)
+            st.markdown("""
+            <div style='display:flex; align-items:center; height:100%; justify-content:left;'>
+            <ul style='list-style-type:none; font-size:1rem; line-height:1.8; margin: 0; padding: 0; color:#9CA3AF;'>
+                <li>• <b>ทุน($)</b> — มูลค่าทุนในบัญชี (Balance)</li>
+                <li>• <b>Risk (%)</b>: สัดส่วนความเสี่ยงต่อไม้</li>
+                <li>• <b>Distance</b>: ระยะ Stop Loss (points/pips)</li>
+                <li>• <b>$/point/lot</b>: มูลค่าการเคลื่อนไหวต่อจุด</li>
+            </ul>
+            </div>
+            """, unsafe_allow_html=True)
 
+
+        # --- แปลงหน่วยและสูตร ---
         distance_points = float(distance_input) * (spec.pip_points if unit == "pips" else 1.0)
-
         vpp = value_per_point_per_lot(spec)
-        st.caption(f"คำนวณจากสูตร: lot = (ทุนที่มี) / (ระยะ {distance_points:.0f} points × ${vpp:.2f}/point/lot)")
+        
+        st.caption(f"คำนวณจากสูตร: lot = (ทุนที่ยอมเสีย) / (ระยะ {distance_points:.0f} points × ${vpp:.2f}/point/lot)")
 
         if st.button("คำนวณ OptimalLot"):
-            if distance_points <= 0:
-                st.error("กรุณากรอกระยะ Stop > 0")
-            else:
-                if mode_safe and risk_percent > 0:
-                    lots = optimal_lot_by_points_risk(balance, risk_percent, distance_points, spec)
-                    pnl_stop = -pnl_usd(lots, distance_points, spec)
-                    st.info(f"ทุนที่มี: ${balance:,.2f} | ระยะ {distance_points:.0f} points")
-                    st.success(f"OptimalLot (ปลอดภัย): **{lots:.2f} lot**")
-                    st.caption(f"ถ้าโดน Stop จะประมาณ: ${pnl_stop:,.2f}")
-                else:
-                    lots = optimal_lot_by_points_allin(balance, distance_points, spec)
-                    pnl_stop = -pnl_usd(lots, distance_points, spec)
-                    st.info(f"ทุนที่มี: ${balance:,.2f} | ระยะ {distance_points:.0f} points")
-                    st.success(f"OptimalLot (All-in): **{lots:.2f} lot**")
-                    st.caption(f"ถ้าโดน Stop จะประมาณ: ${pnl_stop:,.2f}")
+            # 1) คำนวณ Risk Amount
+            risk_amount = balance * (risk_percent / 100.0) if (mode_safe and risk_percent > 0) else balance
+
+            # 2) lot แบบดิบจากสูตร
+            lots_raw = risk_amount / (distance_points * vpp) if (distance_points > 0 and vpp > 0) else 0.0
+
+            # 3) ปัดให้เข้ากับ lot_step และไม่ต่ำกว่า min_lot
+            import math
+            step = getattr(spec, "lot_step", 0.01)
+            min_lot = getattr(spec, "min_lot", 0.01)
+            lots_adj = max(min_lot, math.floor(lots_raw / step) * step if step > 0 else lots_raw)
+
+            # 4) จำกัดไม่ให้เกิน MaxLot เชิงทฤษฎี (ต้องมีตัวแปร price/leverage อยู่ในสโคปเดียวกัน)
+            maxlot_theo = maxlot_theoretical(balance, float(leverage), float(price), spec) if (price > 0 and leverage > 0) else 0.0
+            lots_final = min(lots_adj, maxlot_theo) if maxlot_theo > 0 else lots_adj
+
+            pnl_stop = -pnl_usd(lots_final, distance_points, spec)
+
+            # แสดงผลแบบโปร่งใส
+            st.info(f"Risk Amount: ${risk_amount:,.2f} | Distance: {distance_points:,.0f} points | $/pt/lot: ${vpp:.2f}")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Lot (สูตรดิบ)", f"{lots_raw:.4f}")
+            with c2:
+                st.metric("Lot (ปรับตาม Step/Min)", f"{lots_adj:.2f}")
+            with c3:
+                st.metric("MaxLot (เพดาน)", f"{maxlot_theo:.2f}")
+
+            if maxlot_theo > 0 and lots_adj > maxlot_theo:
+                st.warning("ค่าที่คำนวณเกิน MaxLot ที่เปิดได้ — ระบบปรับลงให้อยู่ภายใต้เพดานแล้ว")
+
+            st.success(f"**OptimalLot ที่ใช้จริง** ≈ **{lots_final:.2f} lot**")
+            st.caption(f"ถ้าโดน Stop (−{distance_points:,.0f} points) ≈ **${pnl_stop:,.2f}**")
 
         st.divider()
         st.markdown("#### สรุปมูลค่าการเคลื่อนที่ (ต่อ 1 lot)")
