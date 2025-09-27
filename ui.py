@@ -3,10 +3,10 @@ import base64
 import pandas as pd
 import streamlit as st
 
-# ---------- CSS สำหรับหน้า Login เท่านั้น ----------
+# ============= CSS เฉพาะตอนหน้า Login =============
 LOGIN_CSS = """
 <style>
-/* ตั้ง height เนื้อหาใต้ header ให้พอดี และจัดกลางแนวตั้ง */
+/* ให้คอนเทนต์ใต้ Header สูงพอและจัดกึ่งกลางแนวตั้งเฉพาะหน้า login */
 [data-testid="stAppViewContainer"] > .main > div.block-container {
   min-height: calc(100svh - 64px);
   display: flex;
@@ -48,7 +48,7 @@ div[data-testid="stFormSubmitButton"] button{
 def inject_login_css():
     st.markdown(LOGIN_CSS, unsafe_allow_html=True)
 
-# ---------- หน้าแรก (สร้าง admin ครั้งแรก) ----------
+# ============= First-run: สร้างแอดมินครั้งแรก =============
 def render_initial_admin_form():
     st.markdown("<div style='text-align:center'>", unsafe_allow_html=True)
     if os.path.exists("assets/logo.png"):
@@ -74,9 +74,9 @@ def render_initial_admin_form():
                 else:
                     st.error("ชื่อผู้ใช้ซ้ำ")
 
-# ---------- ฟอร์ม Login ----------
+# ============= Login Form (กลางจอ) =============
 def render_login_form():
-    left, center, right = st.columns([1, 1, 1])
+    left, center, right = st.columns([1, 2, 1])
     with center:
         # โลโก้
         logo_path = "assets/logo.png"
@@ -86,9 +86,10 @@ def render_login_form():
             st.markdown(f"<img src='data:image/png;base64,{_b64}' class='login-logo' />",
                         unsafe_allow_html=True)
 
-        # ชื่อเพจใต้โลโก้
+        # ชื่อเพจ
         st.markdown("<div class='login-subtitle'>🔮 Tarot Trader 💹</div>", unsafe_allow_html=True)
 
+        # ฟอร์มล็อกอิน
         with st.form("login_form", clear_on_submit=False):
             u = st.text_input("Username", key="login_user")
             p = st.text_input("Password", type="password", key="login_pass")
@@ -104,36 +105,69 @@ def render_login_form():
             else:
                 st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
 
-# ---------- Topbar: แสดงผู้ใช้ + ปุ่มออกจากระบบ (จัดชิดขวา) ----------
-def render_topbar_user(auth):
-    user_col, btn_col = st.columns([5, 1])
-    with user_col:
+# ============= Sidebar (Branding + เมนู + ผู้ใช้ + Logout) =============
+def render_sidebar(auth: dict):
+    # ---- Branding ----
+    logo_path = "assets/logo.png"
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            _b64 = base64.b64encode(f.read()).decode("utf-8")
         st.markdown(
-            f"<div style='text-align:right;'>ผู้ใช้: <b>{auth['username']}</b> ({auth['role']})</div>",
+            f"""
+            <div style="text-align:center; margin-bottom:10px;">
+                <img src="data:image/png;base64,{_b64}"
+                     style="width:100px; height:100px; border-radius:50%; object-fit:cover;
+                            border:2px solid #2f3651; margin-bottom:8px;">
+                <h3 style="margin:0; font-size:1.2rem;">🔮 Tarot Trader 💹</h3>
+            </div>
+            """,
             unsafe_allow_html=True
         )
-    with btn_col:
-        if st.button("ออกจากระบบ", use_container_width=True, key="logout"):
-            st.session_state.auth = None
-            st.rerun()
+    else:
+        st.markdown("<h3 style='text-align:center;'>🔮 Tarot Trader 💹</h3>", unsafe_allow_html=True)
 
-# ---------- Sidebar (ทั้งหมด) ----------
-def render_sidebar():
-    st.sidebar.title("🔮 Tarot Trader 💹")
-    if st.sidebar.button("📊 Port", use_container_width=True):
-        st.session_state.page = "port"
-    if st.sidebar.button("💰 Money Management", use_container_width=True):
+    st.divider()
+
+    # ---- Navigation ----
+    if "page" not in st.session_state:
         st.session_state.page = "money"
-    # เฉพาะ admin
-    if st.session_state.auth.get("role") == "admin":
-        if st.sidebar.button("👤 Users", use_container_width=True):
+
+    if st.button("📊 Port", use_container_width=True):
+        st.session_state.page = "port"
+    if st.button("💰 Money Management", use_container_width=True):
+        st.session_state.page = "money"
+
+    # admin only
+    if auth.get("role") == "admin":
+        if st.button("👤 Users", use_container_width=True):
             st.session_state.page = "users"
 
-# ---------- หน้า Users (admin only) ----------
-def render_user_admin_page():
-    import func
-    c1, c2 = st.columns([1, 1])
+    st.divider()
 
+    # ---- User info + Logout ----
+    st.markdown(
+        f"""
+        <div style='text-align:center;'>
+            <p style='margin:4px 0;'>ผู้ใช้: <b>{auth['username']}</b><br>({auth['role']})</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    if st.button("🚪 ออกจากระบบ", use_container_width=True, key="logout"):
+        st.session_state.auth = None
+        st.rerun()
+
+# ============= Pages =============
+def render_port_page():
+    st.header("📊 พอร์ตลงทุน")
+    st.info("หน้านี้จะเติมภายหลัง")
+
+def render_users_admin_page():
+    import func
+    st.header("👤 จัดการผู้ใช้")
+
+    c1, c2 = st.columns([1, 1])
     with c1:
         st.markdown("**สร้างผู้ใช้ใหม่**")
         nuser = st.text_input("Username ใหม่")
@@ -182,7 +216,7 @@ def render_user_admin_page():
             else:
                 st.error("ไม่พบผู้ใช้หรือผิดพลาด")
 
-# ---------- Money Management: Tabs ----------
+# ============= Money Management =============
 def render_mm_tabs():
     tabs = st.columns([1.6, 1.4, 1.4, 3])
     with tabs[0]:
@@ -196,10 +230,10 @@ def render_mm_tabs():
             st.session_state.mm_tab = "tbd2"
     st.divider()
 
-# ---------- Money Management: Tab 1 - Position Sizing ----------
 def render_mm_position_sizing(func_module):
     st.subheader("🧮 การออก Lot (Position Sizing – Max & Optimal)")
 
+    # เลือกสินค้า
     preset_names = list(func_module.SYMBOL_PRESETS.keys())
     left, right = st.columns([2, 1])
     with left:
@@ -227,7 +261,7 @@ def render_mm_position_sizing(func_module):
     with c2:
         default_price = 0.0
         if use_fetch:
-            fetched = func_module.fetch_price_yf(symbol_name)  # ภายในจะพยายาม XAUT-USD ก่อน
+            fetched = func_module.fetch_price_yf(symbol_name)  # พยายาม XAUT-USD ก่อน
             if fetched:
                 default_price = fetched
                 st.success(f"ราคาโดยประมาณ: {fetched:,.2f}")
@@ -301,7 +335,6 @@ def render_mm_position_sizing(func_module):
     })
     st.dataframe(df, use_container_width=True)
 
-# ---------- Money Management: Tab 2 - SL → Lot ----------
 def render_mm_sl_to_lot(func_module):
     st.subheader("📏 ระยะ SL → คำนวณ Lot")
 
