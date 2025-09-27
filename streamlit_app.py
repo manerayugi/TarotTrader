@@ -4,6 +4,7 @@ import pandas as pd
 
 import auth
 import calc as mm
+import home
 
 # ========================= App Config =========================
 st.set_page_config(page_title="🔮 Tarot Trader 💹", page_icon="🔮", layout="wide")
@@ -144,8 +145,10 @@ with st.sidebar:
 
     # เมนู
     if "page" not in st.session_state:
-        st.session_state.page = "money"
+        st.session_state.page = "home"
 
+    if st.button("🏠 Home", use_container_width=True):
+        st.session_state.page = "home"
     if st.button("📊 Port", use_container_width=True):
         st.session_state.page = "port"
     if st.button("💰 Money Management", use_container_width=True):
@@ -164,7 +167,9 @@ with st.sidebar:
 # ========================= Content =========================
 page = st.session_state.page
 
-if page == "port":
+if page == "home":
+    home.render_home_page()
+elif page == "port":
     st.header("📊 พอร์ตลงทุน")
     st.info("หน้านี้จะเติมภายหลัง")
 
@@ -227,6 +232,6 @@ elif page == "users":
 
 else:
     # ---------------- Money Management ----------------
-    st.header("💰 Money Management")
+    # st.header("💰 Money Management")
     # ใช้ renderer รวมจาก calc.py (แยกความรับผิดชอบชัดเจน)
     mm.render_money_management_page() 
