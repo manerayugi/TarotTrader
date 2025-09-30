@@ -1,12 +1,13 @@
 import streamlit as st
 from knowledge_articles import financial, trading, mindset, risk_management
+from streamlit.components.v1 import html as st_html
 
 # ---------- CONFIG (ปรับเส้นทางรูปได้) ----------
 COVERS = {
     "financial":      "assets/finance_cover.jpg",
-    "trading":        "assets/trading_cover.jpeg",
+    "trading":        "assets/trading_cover.jpg",
     "mindset":        "assets/mindset_cover.jpg",
-    "risk_management":"assets/risk_cover.jpeg",
+    "risk_management":"assets/risk_cover.jpg",
 }
 
 def _cover(path: str, width=220):
@@ -31,10 +32,34 @@ def _render_article_list(articles, display_mode: str):
                 st.session_state["show_article"] = art
                 st.rerun()
 
+def _scroll_to(target_id: str):
+    # ใช้ JS ใน iframe เลื่อนหน้า main ผ่าน parent
+    st_html(
+        f"""
+        <script>
+        const el = parent.document.getElementById("{target_id}");
+        if (el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
+        </script>
+        """,
+        height=0,
+    )
+
+def _scroll_top():
+    st_html(
+        """
+        <script>
+        parent.window.scrollTo({top: 0, behavior: "smooth"});
+        </script>
+        """,
+        height=0,
+    )
+    
 def render_knowledge_index():
+    # จุดยึดสำหรับเลื่อนขึ้นบนสุด
+    st.markdown("<div id='ki-top'></div>", unsafe_allow_html=True)
     # ---------- HERO / TAGLINE ----------
-    st.header("📚 คลังความรู้ Tarot Trader")
-    st.caption("รวบรวมบทความสั้น ๆ อ่านสบาย ๆ เพื่อพัฒนาทักษะการเงิน การเทรด จิตวิทยา และการจัดการความเสี่ยง")
+    st.header("📚 Trader’s Wisdom – คลังความรู้เทรดเดอร์")
+    st.caption("รวบรวมบทความให้ความรู้เพื่อพัฒนาทักษะการเงิน การเทรด จิตวิทยา และการจัดการความเสี่ยง")
     st.markdown(
         """
         <div style="padding:10px 14px; border:1px solid #333; border-radius:10px; margin:10px 0; color:#9aa0a6;">
@@ -42,6 +67,17 @@ def render_knowledge_index():
         </div>
         """,
         unsafe_allow_html=True
+    )
+       # แบนเนอร์เล็ก (optional)
+    st.markdown(
+        """
+        <div style="text-align:center; margin:10px 0 18px 0; opacity:.9;">
+          <hr style="width: 340px; border: 1px solid #666; margin: 8px auto;"/>
+          <div style="font-size:1.05rem;">อ่านวันละนิด เพิ่มทักษะวันละครึ่งก้าว 🧭</div>
+          <hr style="width: 340px; border: 1px solid #666; margin: 8px auto;"/>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     # ---------- โหมดการแสดงผล ----------
