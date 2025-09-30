@@ -149,6 +149,8 @@ with st.sidebar:
 
     if st.button("🏠 Home", use_container_width=True):
         st.session_state.page = "home"
+    if st.button("📚 Trader’s Wisdom", use_container_width=True):
+        st.session_state.page = "knowledge"
     if st.button("📊 Port", use_container_width=True):
         st.session_state.page = "port"
     if st.button("💰 Money Management", use_container_width=True):
@@ -169,6 +171,9 @@ page = st.session_state.page
 
 if page == "home":
     home.render_home_page()
+elif page == "knowledge":
+    import knowledge_index
+    knowledge_index.render_knowledge_index()
 elif page == "port":
     st.header("📊 พอร์ตลงทุน")
     st.info("หน้านี้จะเติมภายหลัง")
