@@ -101,7 +101,7 @@ if not st.session_state.auth:
     """, unsafe_allow_html=True)
     
     # กลางแนวนอนแบบ 2-1-2
-    col_left, col_center, col_right = st.columns([2, 1, 2])
+    col_left, col_center, col_right = st.columns([2, 1.4, 2])
     with col_center:
         # โลโก้ + ชื่อเพจ
         logo_path = "assets/logo.png"
