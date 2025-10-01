@@ -158,6 +158,12 @@ def render_knowledge_index():
             st.caption(cat["desc"])
         _render_article_list(cat["articles"], display_mode, cat_id)
         st.divider()
+        
+    st.markdown(
+        "<div style='text-align:center; color:#9aa0a6; font-size:.9rem; margin-top:12px;'>"
+        "บทความยาว ~3–5 นาทีต่อชิ้น • เน้นนำไปใช้จริงในระบบ Tarot Trader ของคุณ</div>",
+        unsafe_allow_html=True,
+    )
 
     # ---------- โซนบทความ (ต่อท้าย) ----------
     if display_mode == "ต่อท้ายสารบัญ" and st.session_state.get("show_article"):
