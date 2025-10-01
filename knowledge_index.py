@@ -4,7 +4,7 @@ from streamlit.components.v1 import html as st_html
 import streamlit.components.v1 as components
 import re, hashlib
 
-# ---------- CONFIG (ปรับเส้นทางรูปได้) ----------
+# ---------- CONFIG ----------
 COVERS = {
     "financial":       "assets/finance_cover.jpg",
     "trading":         "assets/trading_cover.jpg",
@@ -14,25 +14,18 @@ COVERS = {
 
 # ---------- Helpers ----------
 def _cover(path: str, width=220):
-    # กัน error รูปหาย
     try:
         st.image(path, width=width)
     except Exception:
         st.warning(f"⚠️ ไม่พบรูปภาพ: {path}")
 
 def _slugify(art: dict) -> str:
-    """คืน slug จาก art['slug'] ถ้ามี; ไม่งั้นสร้างจาก title ให้สะอาด/ไม่ว่าง"""
-    if isinstance(art, dict) and art.get("slug"):
-        base = str(art["slug"])
-    else:
-        base = str(art.get("title", "article"))
+    base = str(art.get("slug") or art.get("title") or "article")
     s = base.strip().lower()
-    s = re.sub(r"\s+", "-", s)                 # เว้นวรรค -> -
-    s = re.sub(r"[^a-z0-9\-]+", "", s)         # เก็บเฉพาะ a-z0-9-
-    s = re.sub(r"-{2,}", "-", s)               # ยุบ --- เป็น -
-    s = s.strip("-")                            # ตัด - หัวท้าย
+    s = re.sub(r"\s+", "-", s)
+    s = re.sub(r"[^a-z0-9\-]+", "", s)
+    s = re.sub(r"-{2,}", "-", s).strip("-")
     if not s:
-        # กรณีว่างจริง ๆ สร้าง slug จาก hash สั้น ๆ เพื่อกันซ้ำ
         s = "article-" + hashlib.md5(base.encode("utf-8")).hexdigest()[:6]
     return s
 
@@ -59,31 +52,71 @@ def _scroll_top():
         height=0,
     )
 
-def _render_article_list(articles, display_mode: str, cat_id: str):
+def _render_article_buttons(articles, cat_id: str, cat_title: str, cat_icon: str):
+    """ปุ่มรายชื่อบทความ (เปิดบทความเดี่ยว) + เก็บบริบทหมวดไว้ใน session_state"""
     for art in articles:
         title = art["title"]
-        slug = art.get("slug", title.replace(" ", "_").lower())
+        slug = art.get("slug") or _slugify(art)
         key_suffix = f"{cat_id}_{slug}"
-
-        if display_mode == "เปิดหน้าใหม่":
-            if st.button(f"📝 {title}", use_container_width=True, key=f"open_{key_suffix}"):
-                st.session_state["show_article"] = art
-                st.session_state["sel_cat_id"] = cat_id
-                st.session_state["sel_slug"] = slug
-                st.rerun()
-        else:
-            if st.button(f"📝 {title}", use_container_width=True, key=f"append_{key_suffix}"):
-                st.session_state["show_article"] = art
-                st.session_state["sel_cat_id"] = cat_id
-                st.session_state["sel_slug"] = slug
-                st.rerun()
+        if st.button(f"📝 {title}", use_container_width=True, key=f"open_{key_suffix}"):
+            st.session_state["show_article"] = art
+            st.session_state["sel_cat_id"] = cat_id
+            st.session_state["sel_slug"] = slug
+            st.session_state["sel_cat_title"] = cat_title
+            st.session_state["sel_cat_icon"] = cat_icon
+            st.session_state["__jump_to__"] = f"article-{cat_id}-{slug}"
+            st.rerun()
 
 # ---------- MAIN ----------
 def render_knowledge_index():
-    # จุดอ้างอิงด้านบนสุดของหน้าไว้สำหรับปุ่ม "กลับไปด้านบน"
+    # จุดอ้างอิงด้านบนสุด
     st.markdown("<div id='top'></div>", unsafe_allow_html=True)
 
-    # ---------- HERO / TAGLINE ----------
+    # ---------- ถ้าเลือกบทความแล้ว: แสดงบทความเดี่ยว ----------
+    show_article = st.session_state.get("show_article")
+    if show_article:
+        catid = st.session_state.get("sel_cat_id", "cat0")
+        slug  = st.session_state.get("sel_slug", _slugify(show_article))
+        cat_title = st.session_state.get("sel_cat_title", "คลังความรู้")
+        cat_icon  = st.session_state.get("sel_cat_icon", "📚")
+        anchor_id = f"article-{catid}-{slug}"
+
+        st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
+
+        # แถบบน: ปุ่มย้อนกลับ (เล็ก ๆ) + breadcrumb หมวด
+        top_l, top_r = st.columns([1, 6])
+        with top_l:
+            # ปุ่มเล็ก ๆ สไตล์กะทัดรัด
+            if st.button("← กลับ", key=f"back_{anchor_id}", use_container_width=False):
+                # เคลียร์ state แล้วกลับไปหน้า index
+                st.session_state.pop("show_article", None)
+                st.session_state.pop("sel_cat_id", None)
+                st.session_state.pop("sel_slug", None)
+                st.session_state.pop("sel_cat_title", None)
+                st.session_state.pop("sel_cat_icon", None)
+                _scroll_top()
+                st.rerun()
+        with top_r:
+            st.caption(f"จากหมวด: {cat_icon} **{cat_title}**")
+
+        st.markdown("---")
+        st.subheader(show_article["title"])
+        if show_article.get("desc"):
+            st.caption(show_article["desc"])
+        # เรียก renderer ของบทความ
+        if callable(show_article.get("render")):
+            show_article["render"]()
+        else:
+            st.info("บทความนี้ยังไม่มีเนื้อหา")
+
+        # เลื่อนให้มาอยู่หัวบทความเมื่อเพิ่งเปิด
+        if st.session_state.get("__jump_to__") == anchor_id:
+            _scroll_to(anchor_id)
+            st.session_state["__jump_to__"] = None
+
+        return  # จบโหมดบทความเดี่ยว
+
+    # ---------- หน้า “รวมบทความ” ----------
     st.header("📚 Trader’s Wisdom – คลังความรู้เทรดเดอร์")
     st.caption("รวบรวมบทความให้ความรู้เพื่อพัฒนาทักษะการเงิน การเทรด จิตวิทยา และการจัดการความเสี่ยง")
     st.markdown(
@@ -94,7 +127,6 @@ def render_knowledge_index():
         """,
         unsafe_allow_html=True
     )
-    # แบนเนอร์เล็ก (optional)
     st.markdown(
         """
         <div style="text-align:center; margin:10px 0 18px 0; opacity:.9;">
@@ -106,16 +138,6 @@ def render_knowledge_index():
         unsafe_allow_html=True,
     )
 
-    # ---------- โหมดการแสดงผล ----------
-    display_mode = st.radio(
-        "เลือกรูปแบบการเปิดบทความ",
-        options=["ต่อท้ายสารบัญ", "เปิดหน้าใหม่"],
-        horizontal=True
-    )
-
-    st.divider()
-
-    # ---------- หมวดต่าง ๆ ----------
     categories = [
         {
             "icon": "💰",
@@ -147,68 +169,20 @@ def render_knowledge_index():
         },
     ]
 
-    # แต่ละหมวด — แสดงรูป/คำโปรย + ปุ่มชื่อบทความ
+    # การ์ดหมวด + ปุ่มบทความ
     for i, cat in enumerate(categories):
-        cat_id = f"cat{i}"  # id ประจำหมวด
+        cat_id = f"cat{i}"
         st.subheader(f"{cat['icon']} {cat['title']}")
         col_img, col_desc = st.columns([1, 3])
         with col_img:
             _cover(cat["cover"])
         with col_desc:
             st.caption(cat["desc"])
-        _render_article_list(cat["articles"], display_mode, cat_id)
+        _render_article_buttons(cat["articles"], cat_id, cat["title"], cat["icon"])
         st.divider()
-        
+
     st.markdown(
         "<div style='text-align:center; color:#9aa0a6; font-size:.9rem; margin-top:12px;'>"
         "บทความยาว ~3–5 นาทีต่อชิ้น • เน้นนำไปใช้จริงในระบบ Tarot Trader ของคุณ</div>",
         unsafe_allow_html=True,
     )
-
-    # ---------- โซนบทความ (ต่อท้าย) ----------
-    if display_mode == "ต่อท้ายสารบัญ" and st.session_state.get("show_article"):
-        art = st.session_state["show_article"]
-        cat_id = st.session_state.get("sel_cat_id", "cat0")
-        slug = st.session_state.get("sel_slug", art["title"].replace(" ", "_").lower())
-        anchor_id = f"article-{cat_id}-{slug}"
-
-        # จุดยึดเพื่อเลื่อน
-        st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
-
-        st.markdown("---")
-        st.subheader(art["title"])
-        if "desc" in art and art["desc"]:
-            st.caption(art["desc"])
-        art["render"]()  # ฟังก์ชันวาดบทความของไฟล์นั้น
-
-        # เรียกเลื่อนลงมาที่บทความ (หลังแสดงผลแล้ว)
-        _scroll_to(anchor_id)
-
-        # ปุ่มกลับบนสุด
-        if st.button("🔝 กลับไปด้านบน", key=f"back_top_{anchor_id}"):
-            _scroll_top()
-
-    # # โหมด "เปิดหน้าใหม่" — ในแอปเดียวกันเรายังเรนเดอร์ด้านล่างเหมือนเดิม
-    # # แต่ก็เลื่อนไปที่บทความทันทีเช่นกัน
-    # if mode_state == "เปิดหน้าใหม่" and show_article:
-    #     slug = _slugify(show_article)
-    #     anchor_id = f"article-{slug}"
-
-    #     st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
-    #     st.markdown("---")
-    #     st.subheader(show_article["title"])
-    #     st.caption(show_article.get("desc", ""))
-    #     if callable(show_article.get("render")):
-    #         show_article["render"]()
-    #     else:
-    #         st.info("บทความนี้ยังไม่มีเนื้อหา")
-
-    #     # ปุ่มกลับไปด้านบน
-    #     if st.button("🔝 กลับไปด้านบน", key=f"back_top_new_{slug}"):
-    #         _scroll_to("top")
-
-    #     # เลื่อนไปยังบทความที่เพิ่งเปิด
-    #     jump = st.session_state.get("__jump_to__")
-    #     if jump == anchor_id:
-    #         _scroll_to(anchor_id)
-    #         st.session_state["__jump_to__"] = None
