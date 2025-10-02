@@ -1,5 +1,6 @@
 import streamlit as st
-from .common import center_image_safe  # เรียกใช้ฟังก์ชันรวมจาก common.py
+# from .common import center_image_safe  # เรียกใช้ฟังก์ชันรวมจาก common.py
+from func import *
 
 def art_sr_behavior():
     st.header("อ่านแนวรับ–แนวต้านจากพฤติกรรมราคา")
