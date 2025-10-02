@@ -53,19 +53,34 @@ def _scroll_top():
     )
 
 def _render_article_buttons(articles, cat_id: str, cat_title: str, cat_icon: str):
-    """ปุ่มรายชื่อบทความ (เปิดบทความเดี่ยว) + เก็บบริบทหมวดไว้ใน session_state"""
-    for art in articles:
-        title = art["title"]
-        slug = art.get("slug") or _slugify(art)
-        key_suffix = f"{cat_id}_{slug}"
-        if st.button(f"📝 {title}", use_container_width=True, key=f"open_{key_suffix}"):
-            st.session_state["show_article"] = art
-            st.session_state["sel_cat_id"] = cat_id
-            st.session_state["sel_slug"] = slug
-            st.session_state["sel_cat_title"] = cat_title
-            st.session_state["sel_cat_icon"] = cat_icon
-            st.session_state["__jump_to__"] = f"article-{cat_id}-{slug}"
-            st.rerun()
+    """แสดงปุ่มชื่อบทความเป็นกริด 3 คอลัมน์ + ใช้ไอคอนตามหมวด"""
+    if not articles:
+        st.info("ยังไม่มีบทความในหมวดนี้")
+        return
+
+    # จัดเป็นแถวละ 3 ปุ่ม
+    cols_per_row = 3
+    for i in range(0, len(articles), cols_per_row):
+        row_items = articles[i:i+cols_per_row]
+        cols = st.columns(cols_per_row, gap="small")
+
+        for j, art in enumerate(row_items):
+            with cols[j]:
+                title = art["title"]
+                slug = art.get("slug") or _slugify(art)
+                key_suffix = f"{cat_id}_{i+j}_{slug}"
+
+                # ใช้ไอคอนของหมวดแทนไอคอนโน้ต
+                if st.button(f"{cat_icon} {title}", use_container_width=True, key=f"open_{key_suffix}"):
+                    st.session_state["show_article"]   = art
+                    st.session_state["sel_cat_id"]     = cat_id
+                    st.session_state["sel_slug"]       = slug
+                    st.session_state["sel_cat_title"]  = cat_title
+                    st.session_state["sel_cat_icon"]   = cat_icon
+                    st.session_state["__jump_to__"]    = f"article-{cat_id}-{slug}"
+                    st.rerun()
+
+        # ถ้าแถวสุดท้ายมีไม่ครบ 3, ช่องที่เหลือปล่อยว่างไว้เฉย ๆ ก็โอเค
 
 # ---------- MAIN ----------
 def render_knowledge_index():
