@@ -4,7 +4,7 @@ from func import *
 
 # ---------- บทความใหม่ ----------
 def art_budgeting_basics():
-    center_image_safe("assets/finance_cover.jpg", caption="การวางงบประมาณคือรากฐานของสุขภาพการเงิน")
+    center_image_safe("assets/finance_cover.jpg", caption="การวางงบประมาณคือรากฐานของสุขภาพการเงิน", width=400)
 
     st.header("ทำไมงบประมาณถึงสำคัญ?")
     st.write(
