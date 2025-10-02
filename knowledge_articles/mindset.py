@@ -2,22 +2,6 @@ import streamlit as st
 import os
 from func import *
 
-# ---------- บทความเดิม ----------
-def art_trading_journal():
-    st.write(
-        """
-        บันทึกการเทรด (Trading Journal) ช่วยให้เราเรียนรู้จากข้อผิดพลาด...
-        """
-    )
-
-def art_loss_aversion():
-    st.write(
-        """
-        Loss Aversion คืออคติที่กลัวการขาดทุนมากเกินไป...
-        """
-    )
-
-# ---------- บทความใหม่ ----------
 def art_emotion_control():
     st.header("ควบคุมอารมณ์ในวันที่กราฟสวน")
     center_image_safe("assets/articles/emotion_control.jpg")
@@ -72,16 +56,6 @@ def art_loss_aversion_deep():
     
 # ---------- รวมบทความ ----------
 ARTICLES = [
-    {
-        "title": "เริ่มต้นทำ Trading Journal แบบไม่ยุ่งยาก",
-        "desc": "กรอบการจดเพื่อสะท้อนตนเองและพัฒนาระบบเทรด",
-        "render": art_trading_journal,
-    },
-    {
-        "title": "เข้าใจ Loss Aversion แล้วอยู่กับตลาดได้ยาวขึ้น",
-        "desc": "เคล็ดลับฝึกสติ ลดอคติในการตัดสินใจ",
-        "render": art_loss_aversion,
-    },
     {
         "title": "ควบคุมอารมณ์ในวันที่กราฟสวน",
         "desc": "เรียนรู้เทคนิคการจัดการอารมณ์ เมื่อเจอสถานการณ์สวนทางกับแผนการเทรด เพื่อป้องกันการตัดสินใจผิดพลาด",
