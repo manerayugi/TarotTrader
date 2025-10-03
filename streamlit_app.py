@@ -5,6 +5,7 @@ import pandas as pd
 import auth
 import calc as mm
 import home
+import port
 
 # ========================= App Config =========================
 st.set_page_config(page_title="🔮 Tarot Trader 💹", page_icon="🔮", layout="wide")
@@ -176,7 +177,8 @@ elif page == "knowledge":
     knowledge_index.render_knowledge_index()
 elif page == "port":
     st.header("📊 พอร์ตลงทุน")
-    st.info("หน้านี้จะเติมภายหลัง")
+    # st.info("หน้านี้จะเติมภายหลัง")
+    port.render_port_page()
 
 elif page == "users":
     # เฉพาะแอดมินเท่านั้น
