@@ -1,8 +1,10 @@
+# knowledge_index.py
 import streamlit as st
 from knowledge_articles import financial, trading, mindset, risk_management
 from streamlit.components.v1 import html as st_html
 import streamlit.components.v1 as components
 import re, hashlib
+from auth import require_login_or_public
 
 # ---------- CONFIG ----------
 COVERS = {
@@ -58,7 +60,6 @@ def _render_article_buttons(articles, cat_id: str, cat_title: str, cat_icon: str
         st.info("ยังไม่มีบทความในหมวดนี้")
         return
 
-    # จัดเป็นแถวละ 3 ปุ่ม
     cols_per_row = 3
     for i in range(0, len(articles), cols_per_row):
         row_items = articles[i:i+cols_per_row]
@@ -69,8 +70,6 @@ def _render_article_buttons(articles, cat_id: str, cat_title: str, cat_icon: str
                 title = art["title"]
                 slug = art.get("slug") or _slugify(art)
                 key_suffix = f"{cat_id}_{i+j}_{slug}"
-
-                # ใช้ไอคอนของหมวดแทนไอคอนโน้ต
                 if st.button(f"{cat_icon} {title}", use_container_width=True, key=f"open_{key_suffix}"):
                     st.session_state["show_article"]   = art
                     st.session_state["sel_cat_id"]     = cat_id
@@ -80,10 +79,11 @@ def _render_article_buttons(articles, cat_id: str, cat_title: str, cat_icon: str
                     st.session_state["__jump_to__"]    = f"article-{cat_id}-{slug}"
                     st.rerun()
 
-        # ถ้าแถวสุดท้ายมีไม่ครบ 3, ช่องที่เหลือปล่อยว่างไว้เฉย ๆ ก็โอเค
-
 # ---------- MAIN ----------
 def render_knowledge_index():
+    # 🔐 ตรวจสิทธิ์ก่อน
+    if not require_login_or_public("knowledge"):
+        return
     # จุดอ้างอิงด้านบนสุด
     st.markdown("<div id='top'></div>", unsafe_allow_html=True)
 
@@ -101,9 +101,7 @@ def render_knowledge_index():
         # แถบบน: ปุ่มย้อนกลับ (เล็ก ๆ) + breadcrumb หมวด
         top_l, top_r = st.columns([1, 6])
         with top_l:
-            # ปุ่มเล็ก ๆ สไตล์กะทัดรัด
             if st.button("← กลับ", key=f"back_{anchor_id}", use_container_width=False):
-                # เคลียร์ state แล้วกลับไปหน้า index
                 st.session_state.pop("show_article", None)
                 st.session_state.pop("sel_cat_id", None)
                 st.session_state.pop("sel_slug", None)
@@ -118,20 +116,18 @@ def render_knowledge_index():
         st.subheader(show_article["title"])
         if show_article.get("desc"):
             st.caption(show_article["desc"])
-        # เรียก renderer ของบทความ
         if callable(show_article.get("render")):
             show_article["render"]()
         else:
             st.info("บทความนี้ยังไม่มีเนื้อหา")
 
-        # เลื่อนให้มาอยู่หัวบทความเมื่อเพิ่งเปิด
         if st.session_state.get("__jump_to__") == anchor_id:
             _scroll_to(anchor_id)
             st.session_state["__jump_to__"] = None
 
         return  # จบโหมดบทความเดี่ยว
 
-    # ---------- หน้า “รวมบทความ” ----------
+    # ---------- หน้า “รวมบทความ” (สาธารณะ) ----------
     st.header("📚 Trader’s Wisdom – คลังความรู้เทรดเดอร์")
     st.caption("รวบรวมบทความให้ความรู้เพื่อพัฒนาทักษะการเงิน การเทรด จิตวิทยา และการจัดการความเสี่ยง")
     st.markdown(
@@ -184,7 +180,6 @@ def render_knowledge_index():
         },
     ]
 
-    # การ์ดหมวด + ปุ่มบทความ
     for i, cat in enumerate(categories):
         cat_id = f"cat{i}"
         st.subheader(f"{cat['icon']} {cat['title']}")

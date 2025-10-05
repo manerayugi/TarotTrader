@@ -1,9 +1,13 @@
+# home.py
 import os
 import base64
 import streamlit as st
+from auth import init_auth, is_logged_in, login_box  # <<< เพิ่ม
 
 def render_home_page():
     """แสดงหน้า Home Page หลัก"""
+    init_auth()  # <<< เตรียม session สำหรับ auth
+
     # ---------- CSS ----------
     st.markdown("""
     <style>
@@ -15,8 +19,6 @@ def render_home_page():
         text-align: center;
         padding-top: 40px;
     }
-
-    /* โลโก้: จัดกลางแน่นอน */
     .home-logo {
         width: 120px;
         height: 120px;
@@ -28,7 +30,6 @@ def render_home_page():
         margin-left: auto;
         margin-right: auto;
     }
-
     .home-title {
         font-size: 1.6rem;
         font-weight: 700;
@@ -42,7 +43,6 @@ def render_home_page():
         text-align: center;
         line-height: 1.6;
     }
-
     .qr-row {
         display: flex;
         justify-content: center;
@@ -75,6 +75,22 @@ def render_home_page():
     </style>
     """, unsafe_allow_html=True)
 
+    # ---------- Login strip (อยู่เหนือ Home) ----------
+    # ถ้ายังไม่ล็อกอิน → โชว์ปุ่ม Login เล็ก ๆ มุมขวา และกดแล้วมีฟอร์มให้ล็อกอิน
+    # top_l, top_r = st.columns([6, 1])
+    # with top_r:
+    #     if not is_logged_in():
+    #         # ปุ่มเล็ก ๆ กะทัดรัด
+    #         if st.button("🔐 Login", use_container_width=True, key="home_login_btn"):
+    #             st.session_state["__show_login_box__"] = True
+
+    # แสดงกล่องล็อกอินเมื่อกดปุ่ม (และยังไม่ล็อกอิน)
+    if not is_logged_in() and st.session_state.get("__show_login_box__"):
+        with st.container(border=True):
+            st.caption("เข้าสู่ระบบเพื่อเข้าถึงทุกฟีเจอร์")
+            login_box()  # ใช้ UI จาก auth.py
+        st.write("")  # ระยะห่างเล็กน้อย
+
     # ---------- Content ----------
     st.markdown("<div class='home-container'>", unsafe_allow_html=True)
 
@@ -92,9 +108,9 @@ def render_home_page():
 
     # ---------- QR + ปุ่ม ----------
     qr_data = [
-        {"name": "TikTok", "img": "assets/qr_tiktok.png", "url": "https://www.tiktok.com/@tarottrader162"},
+        {"name": "TikTok",   "img": "assets/qr_tiktok.png",   "url": "https://www.tiktok.com/@tarottrader162"},
         {"name": "Facebook", "img": "assets/qr_facebook.png", "url": "https://www.facebook.com/TarotTrader162"},
-        {"name": "LINE", "img": "assets/qr_line.png", "url": "https://lin.ee/Fwd8Qqen"},
+        {"name": "LINE",     "img": "assets/qr_line.png",     "url": "https://lin.ee/Fwd8Qqen"},
     ]
     
     st.markdown("<div class='qr-row'>", unsafe_allow_html=True)
@@ -102,7 +118,6 @@ def render_home_page():
     for i, q in enumerate(qr_data):
         with cols[i]:
             if os.path.exists(q["img"]):
-                # st.image(q["img"], width=300)
                 with open(q["img"], "rb") as f:
                     b64 = base64.b64encode(f.read()).decode()
                 st.markdown(
