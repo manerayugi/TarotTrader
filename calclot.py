@@ -10,7 +10,7 @@ from func import (
 )
 
 def render_tab():
-    st.subheader("🧮 การออก Lot (Max & Optimal Lot)")
+    st.subheader("🧮 Lot Size (การออก Lot)")
 
     # 1) เลือกสินค้า
     preset_names = list(SYMBOL_PRESETS.keys())
@@ -136,7 +136,7 @@ def render_tab():
             format="%d"
         )
     with u3:
-        mode_safe = st.toggle("โหมดปลอดภัย (Risk%)", value=True)
+        mode_safe = st.toggle("โหมดปลอดภัย (Risk%)", value=False)
         risk_percent = st.number_input(
             "Risk ต่อไม้ (%)", 
             value=1.0, 

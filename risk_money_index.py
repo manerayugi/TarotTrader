@@ -85,7 +85,7 @@ def _need_login_notice():
         <div style='border:2px dashed #eab308; padding:16px; border-radius:12px; background:#18181b;'>
           <h3 style='margin:0 0 8px 0;'>🔒 หน้านี้เปิดเฉพาะผู้ใช้ที่ล็อกอิน</h3>
           <div>กรุณาล็อกอิน หรือติดต่อ
-            <a href='https://facebook.com/TarotTrader' target='_blank'>FB: Tarot Trader</a>
+            <a href='https://facebook.com/TarotTrader162' target='_blank'>FB: Tarot Trader - หมอดูพาเทรด</a>
             เพื่อขอสิทธิ์เข้าถึง</div>
         </div>
         """,

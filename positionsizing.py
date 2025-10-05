@@ -8,7 +8,7 @@ from func import (
 )
 
 def render_tab():
-    st.subheader("📏 ระยะ SL → คำนวณ Lot")
+    st.subheader("📏 Position Sizing (ระยะ SL → คำนวณ Lot)")
 
     left, right = st.columns([1, 1.2])
     with left:
