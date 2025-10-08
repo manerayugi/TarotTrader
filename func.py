@@ -290,3 +290,21 @@ def _tp_points(entry: Optional[float], tp: Optional[float], spec: SymbolSpec) ->
 
 # ========== ค่ามาตรฐานอื่น ==========
 _DEFAULT_RISK_SET = [1, 2, 3, 4, 5, 10, 15, 20, 30, 50, 100]
+
+def _hr(width: int = 360):
+    st.markdown(
+        f"""
+        <div style='text-align:center; margin:14px 0;'>
+          <hr style='width: {width}px; border: 1px solid #666; margin: 8px auto;'/>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def _hrr():
+    st.markdown(
+        "<div style='text-align:center; margin:10px 0;'>"
+        "<hr style='width:360px; border:1px solid #555; margin:8px auto;'/>"
+        "</div>",
+        unsafe_allow_html=True
+    )

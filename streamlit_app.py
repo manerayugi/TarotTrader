@@ -10,7 +10,7 @@ import auth
 import home
 import port_index
 import knowledge_index
-import risk_money_index as mm  # มี render_page() และบังคับ public เฉพาะแท็บ 'การออก Lot'
+import riskMoney_index as mm  # มี render_page() และบังคับ public เฉพาะแท็บ 'การออก Lot'
 
 # ========================= App Config =========================
 st.set_page_config(page_title="🔮 Tarot Trader 💹", page_icon="🔮", layout="wide")

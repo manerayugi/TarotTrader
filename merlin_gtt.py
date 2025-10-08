@@ -2,28 +2,11 @@
 import math
 import pandas as pd
 import streamlit as st
+from func import _hr, _hrr
 
 # ===== สมมติฐานค่าพื้นฐาน (แก้ได้) =====
 DEFAULT_PRICE_POINT = 0.01   # 1 point = 0.01 หน่วยราคา (เช่น XAU)
 DEFAULT_VPP_PER_LOT = 1.0    # $/point/lot = 1 (ให้สอดคล้องกับหน้า MM ของคุณ)
-
-def _hr(width: int = 360):
-    st.markdown(
-        f"""
-        <div style='text-align:center; margin:14px 0;'>
-          <hr style='width: {width}px; border: 1px solid #666; margin: 8px auto;'/>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-def _hrr():
-    st.markdown(
-        "<div style='text-align:center; margin:10px 0;'>"
-        "<hr style='width:360px; border:1px solid #555; margin:8px auto;'/>"
-        "</div>",
-        unsafe_allow_html=True
-    )
 
 def _center_latex(expr: str):
     st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)

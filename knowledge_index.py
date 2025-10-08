@@ -1,6 +1,6 @@
 # knowledge_index.py
 import streamlit as st
-from knowledge_articles import financial, trading, mindset, risk_management
+from knowledge_articles import knowledge_financial, knowledge_mindset, knowledge_risk_management, knowledge_trading
 from streamlit.components.v1 import html as st_html
 import streamlit.components.v1 as components
 import re, hashlib
@@ -155,28 +155,28 @@ def render_knowledge_index():
             "title": "Financial – การเงินพื้นฐาน",
             "desc": "สร้างรากฐานการเงินที่แข็งแรง ด้วยแนวคิดและทักษะที่นำไปใช้ได้จริงในชีวิตประจำวัน",
             "cover": COVERS["financial"],
-            "articles": financial.ARTICLES
+            "articles": knowledge_financial.ARTICLES
         },
         {
             "icon": "📈",
             "title": "เทคนิคหรือความรู้ด้านการเทรด",
             "desc": "แนวคิดและเทคนิคการเทรดที่ย่อยง่าย ปฏิบัติได้จริง ในสไตล์ Tarot Trader",
             "cover": COVERS["trading"],
-            "articles": trading.ARTICLES
+            "articles": knowledge_trading.ARTICLES
         },
         {
             "icon": "🧠",
             "title": "Mindset หรือจิตวิทยาการเทรด",
             "desc": "จัดการอารมณ์ โฟกัสและวินัย เพื่อให้การเทรดยั่งยืนมากขึ้น",
             "cover": COVERS["mindset"],
-            "articles": mindset.ARTICLES
+            "articles": knowledge_mindset.ARTICLES
         },
         {
             "icon": "⚖️",
             "title": "Risk & Money Management",
             "desc": "แก่นสำคัญของการอยู่รอดในตลาด: บริหารความเสี่ยงและเงินทุนอย่างเป็นระบบ",
             "cover": COVERS["risk_management"],
-            "articles": risk_management.ARTICLES
+            "articles": knowledge_risk_management.ARTICLES
         },
     ]
 

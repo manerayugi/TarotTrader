@@ -5,10 +5,10 @@ import streamlit as st
 from auth import require_login_or_public
 
 # แท็บย่อย
-import calclot            # การออก Lot (public)
-import positionsizing     # ระยะ SL → Lot (login)
-import gmksizing          # GMK Signal → Lot (login)
-import gmkplaning         # GMK Signal Planning (login)
+import riskMoney_lot_size            # การออก Lot (public)
+import riskMoney_position_sizing     # ระยะ SL → Lot (login)
+import riskMoney_gmksizing          # GMK Signal → Lot (login)
+import riskMoney_gmkplaning         # GMK Signal Planning (login)
 
 
 def render_page():
@@ -54,26 +54,26 @@ def render_page():
     # ---- Route ตามแท็บ ----
     tab = st.session_state.mm_tab
     if tab == "sizing":
-        calclot.render_tab()  # public
+        riskMoney_lot_size.render_tab()  # public
         st.info("หน้านี้เปิดให้ผู้เยี่ยมชมใช้งานได้โดยไม่ต้องล็อกอิน ✅")
 
     elif tab == "sl":
         if not logged_in:
             _need_login_notice()
             return
-        positionsizing.render_tab()
+        riskMoney_position_sizing.render_tab()
 
     elif tab == "signal":
         if not logged_in:
             _need_login_notice()
             return
-        gmksizing.render_tab()
+        riskMoney_gmksizing.render_tab()
 
     elif tab == "signal_plan":
         if not logged_in:
             _need_login_notice()
             return
-        gmkplaning.render_tab()
+        riskMoney_gmkplaning.render_tab()
 
     else:
         st.info("เลือกหน้าฟังก์ชันอื่น ๆ ได้ในอนาคต (ยังไม่เปิดใช้งาน)")

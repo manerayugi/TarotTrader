@@ -1,2 +1,2 @@
 # ให้ import ได้แบบ: from knowledge_articles import financial, trading, ...
-from . import financial, trading, mindset, risk_management
+from . import knowledge_financial, knowledge_mindset, knowledge_risk_management, knowledge_trading
