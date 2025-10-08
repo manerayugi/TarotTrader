@@ -8,7 +8,7 @@ from sqlalchemy import text  # ใช้ในหน้า Users (อัปเ�
 # โมดูลภายในโปรเจกต์
 import auth
 import home
-import port
+import port_index
 import knowledge_index
 import risk_money_index as mm  # มี render_page() และบังคับ public เฉพาะแท็บ 'การออก Lot'
 
@@ -57,7 +57,7 @@ with st.sidebar:
         _goto("knowledge")
     if st.button("💰 Money Management", use_container_width=True):
         _goto("mm")
-    if st.button("📊 Port", use_container_width=True):
+    if st.button("📊 Portfolio", use_container_width=True):
         _goto("port")
 
     # ----- อ่านสถานะผู้ใช้ให้ถูกต้อง -----
@@ -162,7 +162,7 @@ if page == "login":
                 st.session_state.auth = {
                     "logged_in": True,
                     "user": user,  # {"id","username","role","expiry_at"}
-                    "at": datetime.datetime.utcnow().isoformat()
+                    "at": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 }
                 st.session_state.page = "home"
                 st.rerun()
@@ -185,8 +185,8 @@ elif page == "mm":
 # ---------- หน้า Port (private ทั้งหน้า) ----------
 elif page == "port":
     if auth.require_login_or_public("private"):  # ไม่ล็อกอินจะแจ้งเตือนและไม่เรนเดอร์
-        st.subheader("📊 Port")
-        port.render_port_page()
+        # st.subheader("📊 Portfolio")
+        port_index.render_port_page()
 
 # ---------- หน้า Users (admin only) ----------
 elif page == "users":
