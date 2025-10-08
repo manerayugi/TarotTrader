@@ -49,7 +49,7 @@ with st.sidebar:
     _sidebar_logo_and_title()
     st.divider()
 
-    # ===== เมนู (ใน Sidebar) =====
+    # ===== เมนู =====
     st.markdown("**เมนู**")
     if st.button("🏠 Home", use_container_width=True):
         _goto("home")
@@ -60,30 +60,29 @@ with st.sidebar:
     if st.button("📊 Port", use_container_width=True):
         _goto("port")
 
-    # เฉพาะ Admin: Users
+    # ----- อ่านสถานะผู้ใช้ให้ถูกต้อง -----
     auth_info = st.session_state.get("auth", {})
-    is_admin = bool(
-        auth_info.get("logged_in")
-        and auth_info.get("user")
-        and auth_info["user"].get("role") == "admin"
-    )
-    if is_admin:
+    user_info = (auth_info or {}).get("user") or {}
+    is_logged_in = bool((auth_info or {}).get("logged_in"))
+    user_role = user_info.get("role")
+
+    # เฉพาะ Admin: Users
+    if is_logged_in and user_role == "admin":
         if st.button("👤 Users", use_container_width=True):
             _goto("users")
 
     st.divider()
 
-    # ===== ปุ่ม Login/Logout (Sidebar) =====
-    if not auth_info.get("logged_in"):
-        # ปุ่ม Login จะพาไปหน้า login (ตามโจทย์)
+    # ===== ปุ่ม Login/Logout =====
+    if not is_logged_in:
         if st.button("🔐 Login", use_container_width=True, type="primary"):
             _goto("login")
         st.caption("ยังไม่ได้เข้าสู่ระบบ")
     else:
-        st.caption(f"ผู้ใช้: **{auth_info.get('username','?')}** ({auth_info.get('role','user')})")
+        st.caption(f"ผู้ใช้: **{user_info.get('username','?')}** ({user_role or 'user'})")
         if st.button("🚪 ออกจากระบบ", use_container_width=True):
-            # ✅ ล้าง session + กลับหน้า Home โดยอัตโนมัติ
-            auth.logout()  # ใช้ฟังก์ชัน logout() จาก auth.py ที่มี st.rerun() ในตัว
+            # เคลียร์และกลับหน้า Home
+            auth.logout()              # ภายในมี st.rerun() อยู่แล้วก็ได้
             st.session_state.page = "home"
             st.rerun()
 
@@ -192,7 +191,8 @@ elif page == "port":
 # ---------- หน้า Users (admin only) ----------
 elif page == "users":
     auth_info = st.session_state.get("auth", {})
-    if not (auth_info.get("logged_in") and auth_info.get("user") and auth_info["user"].get("role") == "admin"):
+    user_info = (auth_info or {}).get("user") or {}
+    if not auth_info.get("logged_in") or user_info.get("role") != "admin":
         st.error("หน้าเฉพาะผู้ดูแลระบบ")
         st.stop()
 
