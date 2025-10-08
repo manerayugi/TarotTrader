@@ -76,10 +76,11 @@ def render_performance_tab():
     for i, delta in enumerate(vals, start=1):
         pct_on_equity = (delta / equity * 100.0) if equity != 0 else 0.0
         rows.append({
-            "#": i,
-            "Amount ($)": delta,
+            # "#": i,
             "Equity ก่อนรายการ ($)": equity,
+            "Amount ($)": delta,
             "% ของทุนขณะนั้น": pct_on_equity,
+            "Equity หลังรายการ ($)": equity + delta,
         })
         equity += delta
         cum_profit += delta
@@ -88,9 +89,10 @@ def render_performance_tab():
     sty = (
         df.style
           .format({
-              "Amount ($)": "{:,.2f}",
               "Equity ก่อนรายการ ($)": "{:,.2f}",
-              "% ของทุนขณะนั้น": "{:.2f}%"
+              "Amount ($)": "{:,.2f}",
+              "% ของทุนขณะนั้น": "{:.2f}%",
+              "Equity หลังรายการ ($)": "{:,.2f}"
           })
           .set_table_styles([{'selector': 'th', 'props': [('text-align', 'center')]}])
           .set_properties(**{'text-align': 'center'})
