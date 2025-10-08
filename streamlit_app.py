@@ -75,16 +75,17 @@ with st.sidebar:
 
     # ===== ปุ่ม Login/Logout (Sidebar) =====
     if not auth_info.get("logged_in"):
+        # ปุ่ม Login จะพาไปหน้า login (ตามโจทย์)
         if st.button("🔐 Login", use_container_width=True, type="primary"):
             _goto("login")
         st.caption("ยังไม่ได้เข้าสู่ระบบ")
     else:
-        u = auth_info["user"]
-        st.caption(f"ผู้ใช้: **{u.get('username','?')}** ({u.get('role','user')})")
-        if u.get("expiry_at"):
-            st.caption(f"⏳ หมดอายุ: {u.get('expiry_at')}")
+        st.caption(f"ผู้ใช้: **{auth_info.get('username','?')}** ({auth_info.get('role','user')})")
         if st.button("🚪 ออกจากระบบ", use_container_width=True):
-            auth.logout()  # ล้าง state ผ่าน helper
+            # ✅ ล้าง session + กลับหน้า Home โดยอัตโนมัติ
+            auth.logout()  # ใช้ฟังก์ชัน logout() จาก auth.py ที่มี st.rerun() ในตัว
+            st.session_state.page = "home"
+            st.rerun()
 
 # ========================= Content Router =====================
 page = st.session_state.page

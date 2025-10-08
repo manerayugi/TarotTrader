@@ -242,6 +242,7 @@ def has_role(*roles: str) -> bool:
 def logout():
     init_auth()
     st.session_state.auth = {"logged_in": False, "user": None, "at": None}
+    st.session_state.page = "home"
     st.rerun()
 
 # ---------------------------------------------
