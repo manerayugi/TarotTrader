@@ -1,7 +1,9 @@
 # streamlit_app.py
 import os, base64
+import datetime
 import pandas as pd
 import streamlit as st
+from sqlalchemy import text  # ใช้ในหน้า Users (อัปเดตวันหมดอายุ)
 
 # โมดูลภายในโปรเจกต์
 import auth
@@ -47,7 +49,7 @@ with st.sidebar:
     _sidebar_logo_and_title()
     st.divider()
 
-    # ===== เมนู (ไปอยู่ที่ Sidebar ตามที่ขอ) =====
+    # ===== เมนู (ใน Sidebar) =====
     st.markdown("**เมนู**")
     if st.button("🏠 Home", use_container_width=True):
         _goto("home")
@@ -60,23 +62,29 @@ with st.sidebar:
 
     # เฉพาะ Admin: Users
     auth_info = st.session_state.get("auth", {})
-    if auth_info.get("logged_in") and auth_info.get("role") == "admin":
+    is_admin = bool(
+        auth_info.get("logged_in")
+        and auth_info.get("user")
+        and auth_info["user"].get("role") == "admin"
+    )
+    if is_admin:
         if st.button("👤 Users", use_container_width=True):
             _goto("users")
 
     st.divider()
 
-    # ===== ปุ่ม Login/Logout ไปอยู่ Sidebar =====
+    # ===== ปุ่ม Login/Logout (Sidebar) =====
     if not auth_info.get("logged_in"):
-        # ปุ่ม Login จะพาไปหน้า login (ตามโจทย์)
         if st.button("🔐 Login", use_container_width=True, type="primary"):
             _goto("login")
         st.caption("ยังไม่ได้เข้าสู่ระบบ")
     else:
-        st.caption(f"ผู้ใช้: **{auth_info.get('username','?')}** ({auth_info.get('role','user')})")
+        u = auth_info["user"]
+        st.caption(f"ผู้ใช้: **{u.get('username','?')}** ({u.get('role','user')})")
+        if u.get("expiry_at"):
+            st.caption(f"⏳ หมดอายุ: {u.get('expiry_at')}")
         if st.button("🚪 ออกจากระบบ", use_container_width=True):
-            st.session_state.auth = {"logged_in": False}
-            _goto("home")
+            auth.logout()  # ล้าง state ผ่าน helper
 
 # ========================= Content Router =====================
 page = st.session_state.page
@@ -149,13 +157,17 @@ if page == "login":
                 st.markdown("</div>", unsafe_allow_html=True)
 
         if submitted:
-            user = auth.verify_login(u, p)
-            if user:
-                # เก็บสถานะให้สอดคล้องกับตัว router ที่ใช้อยู่
-                st.session_state.auth = {"logged_in": True, **user}
-                _goto("home")  # ✅ ล็อกอินสำเร็จ → กลับหน้า Home
+            user, err = auth.verify_login(u.strip(), p)
+            if user and not err:
+                st.session_state.auth = {
+                    "logged_in": True,
+                    "user": user,  # {"id","username","role","expiry_at"}
+                    "at": datetime.datetime.utcnow().isoformat()
+                }
+                st.session_state.page = "home"
+                st.rerun()
             else:
-                st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                st.error("บัญชีหมดอายุ" if err == "expired" else "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
 
 # ---------- หน้า Home (สาธารณะ) ----------
 elif page == "home":
@@ -178,59 +190,89 @@ elif page == "port":
 
 # ---------- หน้า Users (admin only) ----------
 elif page == "users":
-    if not (st.session_state.auth.get("logged_in") and st.session_state.auth.get("role") == "admin"):
+    auth_info = st.session_state.get("auth", {})
+    if not (auth_info.get("logged_in") and auth_info.get("user") and auth_info["user"].get("role") == "admin"):
         st.error("หน้าเฉพาะผู้ดูแลระบบ")
-    else:
-        st.header("👤 จัดการผู้ใช้")
+        st.stop()
 
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            st.markdown("**สร้างผู้ใช้ใหม่**")
-            nuser = st.text_input("Username ใหม่")
-            npass = st.text_input("Password", type="password")
-            nrole = st.selectbox("Role", ["user", "admin"])
-            if st.button("สร้างผู้ใช้"):
-                if not nuser or not npass:
-                    st.error("กรอกให้ครบ")
-                else:
-                    if auth.create_user(nuser, npass, role=nrole):
-                        st.success("สร้างผู้ใช้สำเร็จ")
-                    else:
-                        st.error("ชื่อผู้ใช้ซ้ำหรือผิดพลาด")
+    st.header("👤 จัดการผู้ใช้")
 
-        with c2:
-            st.markdown("**เปลี่ยนรหัสผ่าน**")
-            ch_user = st.text_input("Username ที่จะเปลี่ยนรหัส")
-            ch_pass = st.text_input("รหัสผ่านใหม่", type="password")
-            if st.button("เปลี่ยนรหัสผ่าน"):
-                if not ch_user or not ch_pass:
-                    st.error("กรอกให้ครบ")
-                else:
-                    if auth.change_password(ch_user, ch_pass):
-                        st.success("เปลี่ยนรหัสผ่านสำเร็จ")
-                    else:
-                        st.error("ไม่พบผู้ใช้")
-
-        st.divider()
-        st.markdown("**รายการผู้ใช้ทั้งหมด**")
-        users = auth.list_users()
-        if users:
-            dfu = pd.DataFrame(users, columns=["id", "username", "role", "created_at"])
-            st.dataframe(dfu, use_container_width=True, height=min(400, (len(dfu)+2)*33))
-        else:
-            st.info("ยังไม่มีผู้ใช้")
-
-        st.divider()
-        st.markdown("**ลบผู้ใช้**")
-        del_user = st.text_input("Username ที่จะลบ")
-        if st.button("ลบผู้ใช้"):
-            if del_user == st.session_state.auth.get("username"):
-                st.error("ห้ามลบบัญชีที่กำลังใช้งาน")
+    # -------- สร้างผู้ใช้ --------
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.markdown("**สร้างผู้ใช้ใหม่**")
+        nuser = st.text_input("Username ใหม่")
+        npass = st.text_input("Password", type="password")
+        nrole = st.selectbox("Role", ["user", "admin"])
+        # ถ้าอยากตั้งวันหมดอายุเอง (ออปชัน) — เว้นว่างไว้ให้ระบบตั้ง +1 เดือน
+        nexp = st.text_input("Expiry (YYYY-MM-DD) (เว้นว่าง = +1 เดือน)")
+        if st.button("สร้างผู้ใช้"):
+            exp_val = nexp.strip() or None
+            ok = auth.create_user(nuser, npass, role=nrole, expiry_at=exp_val)
+            if ok:
+                st.success("สร้างผู้ใช้สำเร็จ")
             else:
-                if auth.delete_user(del_user):
-                    st.success("ลบสำเร็จ")
+                st.error("ชื่อผู้ใช้ซ้ำหรือผิดพลาด")
+
+    with c2:
+        st.markdown("**เปลี่ยนรหัสผ่าน**")
+        ch_user = st.text_input("Username ที่จะเปลี่ยนรหัส")
+        ch_pass = st.text_input("รหัสผ่านใหม่", type="password")
+        if st.button("เปลี่ยนรหัสผ่าน"):
+            if not ch_user or not ch_pass:
+                st.error("กรอกให้ครบ")
+            else:
+                if auth.change_password(ch_user, ch_pass):
+                    st.success("เปลี่ยนรหัสผ่านสำเร็จ")
                 else:
-                    st.error("ไม่พบผู้ใช้หรือผิดพลาด")
+                    st.error("ไม่พบผู้ใช้")
+
+    st.divider()
+    st.markdown("**รายการผู้ใช้ทั้งหมด**")
+    users = auth.list_users()  # id, username, role, created_at, expiry_at
+    if users:
+        dfu = pd.DataFrame(users, columns=["id", "username", "role", "created_at", "expiry_at"])
+        st.dataframe(dfu, use_container_width=True, height=min(440, (len(dfu)+2)*33))
+    else:
+        st.info("ยังไม่มีผู้ใช้")
+
+    st.divider()
+    st.markdown("**แก้วันหมดอายุ (Expiry)**")
+    ux = st.text_input("Username ที่จะแก้วันหมดอายุ")
+    new_exp = st.text_input("Expiry ใหม่ (YYYY-MM-DD) | เว้นว่าง = ไม่มีวันหมดอายุ")
+    cex1, cex2 = st.columns([1,1])
+    with cex1:
+        if st.button("อัปเดตวันหมดอายุ"):
+            exp_val = new_exp.strip() or None
+            if auth.update_expiry(ux, exp_val):
+                st.success("อัปเดตสำเร็จ")
+            else:
+                st.error("ไม่พบผู้ใช้ หรือบันทึกไม่สำเร็จ")
+    with cex2:
+        if st.button("ขยาย +1 เดือน"):
+            # อัปเดตเป็น NOW() + 1 month โดยตรง
+            with auth.get_engine().begin() as conn:
+                res = conn.execute(
+                    text("UPDATE users SET expiry_at = NOW() + INTERVAL '1 month' WHERE username = :u"),
+                    {"u": ux.strip()}
+                )
+            if res.rowcount > 0:
+                st.success("ขยาย +1 เดือนสำเร็จ")
+            else:
+                st.error("ไม่พบผู้ใช้ หรือบันทึกไม่สำเร็จ")
+
+    st.divider()
+    st.markdown("**ลบผู้ใช้**")
+    del_user = st.text_input("Username ที่จะลบ")
+    if st.button("ลบผู้ใช้"):
+        cur = st.session_state.get("auth", {}).get("user", {})
+        if del_user == cur.get("username"):
+            st.error("ห้ามลบบัญชีที่กำลังใช้งาน")
+        else:
+            if auth.delete_user(del_user):
+                st.success("ลบสำเร็จ")
+            else:
+                st.error("ไม่พบผู้ใช้หรือผิดพลาด")
 
 # ---------- อื่น ๆ ----------
 else:

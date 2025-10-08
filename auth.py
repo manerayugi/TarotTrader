@@ -1,6 +1,6 @@
 # auth.py
 from __future__ import annotations
-from typing import Optional, Dict, List
+from typing import Optional, List, Dict, Tuple
 
 import streamlit as st
 from sqlalchemy import create_engine, text
@@ -36,6 +36,7 @@ def get_engine() -> Engine:
 # ---------------------------------------------
 def ensure_users_table() -> None:
     with get_engine().begin() as conn:
+        # สร้างตาราง (ถ้าไม่มี)
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS users(
             id SERIAL PRIMARY KEY,
@@ -45,10 +46,15 @@ def ensure_users_table() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """))
+        # เพิ่มคอลัมน์วันหมดอายุ (ถ้ายังไม่มี)
+        conn.execute(text("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS expiry_at TIMESTAMP NULL;
+        """))
 
 def ensure_initial_admin() -> bool:
     """
-    True = ยังไม่มีผู้ใช้ → UI ควรแสดงฟอร์มสร้างแอดมินครั้งแรก
+    True = ยังไม่มีผู้ใช้ → ให้หน้า UI แสดงฟอร์มสร้างแอดมินครั้งแรก
     """
     ensure_users_table()
     with get_engine().connect() as c:
@@ -68,17 +74,35 @@ def _check_password(raw: str, hashed: str) -> bool:
         return False
 
 # ---------------------------------------------
-# CRUD (เหมือนเดิม)
+# CRUD
 # ---------------------------------------------
-def create_user(username: str, password: str, role: str = "user") -> bool:
+def create_user(username: str, password: str, role: str = "user", expiry_at: Optional[str] = None) -> bool:
+    """
+    expiry_at: ถ้า None → เซ็ตเป็น NOW() + INTERVAL '1 month'
+    (ถ้าอยากกำหนดเอง ให้ส่งรูปแบบ 'YYYY-MM-DD' หรือ timestamp ที่ Postgres parse ได้)
+    """
     if not username.strip() or not password:
         return False
     try:
         with get_engine().begin() as conn:
-            conn.execute(
-                text("INSERT INTO users (username, password_hash, role) VALUES (:u,:p,:r)"),
-                {"u": username.strip(), "p": _hash_password(password), "r": role}
-            )
+            if expiry_at is None and role != "admin":
+                # user ปกติหมดอายุอีก 1 เดือน
+                conn.execute(
+                    text("""
+                        INSERT INTO users (username, password_hash, role, expiry_at)
+                        VALUES (:u, :p, :r, NOW() + INTERVAL '1 month')
+                    """),
+                    {"u": username.strip(), "p": _hash_password(password), "r": role}
+                )
+            else:
+                # ถ้าเป็น admin หรือมีการระบุ expiry_at เอง
+                conn.execute(
+                    text("""
+                        INSERT INTO users (username, password_hash, role, expiry_at)
+                        VALUES (:u, :p, :r, :e)
+                    """),
+                    {"u": username.strip(), "p": _hash_password(password), "r": role, "e": expiry_at}
+                )
         return True
     except Exception as e:
         print("create_user error:", e)
@@ -94,6 +118,18 @@ def change_password(username: str, new_password: str) -> bool:
         )
     return res.rowcount > 0
 
+def update_expiry(username: str, new_expiry: Optional[str]) -> bool:
+    """
+    new_expiry: 'YYYY-MM-DD' หรือ timestamp ที่ Postgres parse ได้
+    - ถ้าส่ง None → เซ็ต NULL (ไม่มีวันหมดอายุ)
+    """
+    with get_engine().begin() as conn:
+        res = conn.execute(
+            text("UPDATE users SET expiry_at = :e WHERE username=:u"),
+            {"u": username.strip(), "e": new_expiry}
+        )
+    return res.rowcount > 0
+
 def delete_user(username: str) -> bool:
     with get_engine().begin() as conn:
         res = conn.execute(text("DELETE FROM users WHERE username=:u"), {"u": username.strip()})
@@ -102,23 +138,79 @@ def delete_user(username: str) -> bool:
 def get_user(username: str) -> Optional[Dict]:
     with get_engine().connect() as c:
         row = c.execute(
-            text("SELECT id, username, password_hash, role, created_at FROM users WHERE username=:u"),
+            text("""
+                SELECT id, username, password_hash, role, created_at, expiry_at
+                FROM users WHERE username=:u
+            """),
             {"u": username.strip()}
         ).mappings().first()
     return dict(row) if row else None
 
-def verify_login(username: str, password: str) -> Optional[Dict]:
+def is_expired(user_row: Dict) -> bool:
+    """
+    หมดอายุหรือยัง (True = หมดอายุแล้ว)
+    - admin → ไม่หมดอายุเสมอ (ข้ามเช็ค)
+    - expiry_at = NULL → ไม่หมดอายุ
+    """
+    if not user_row:
+        return True
+    if user_row.get("role") == "admin":
+        return False
+    expiry = user_row.get("expiry_at")
+    if expiry is None:
+        return False
+    # เช็คในฐานข้อมูลเพื่อเลี่ยง timezone issue
+    with get_engine().connect() as c:
+        # now > expiry ?
+        res = c.execute(text("SELECT NOW() > :e"), {"e": expiry}).scalar_one()
+        return bool(res)
+
+def verify_login(username: str, password: str) -> Tuple[Optional[Dict], Optional[str]]:
+    """
+    คืนค่า (user_dict, error_message)
+    - รหัสผ่านผิด → (None, "invalid")
+    - หมดอายุ (non-admin) → (None, "expired")
+    - สำเร็จ → (user_info, None)
+    """
     u = get_user(username)
-    if not u:
-        return None
-    if _check_password(password, u["password_hash"]):
-        return {"id": u["id"], "username": u["username"], "role": u["role"]}
-    return None
+    if not u or not _check_password(password, u["password_hash"]):
+        return (None, "invalid")
+    if is_expired(u):
+        return (None, "expired")
+    return ({"id": u["id"], "username": u["username"], "role": u["role"], "expiry_at": u.get("expiry_at")}, None)
 
 def list_users() -> List[tuple]:
     with get_engine().connect() as c:
-        rows = c.execute(text("SELECT id, username, role, created_at FROM users ORDER BY id ASC")).all()
+        rows = c.execute(text("""
+            SELECT id, username, role, created_at, expiry_at
+            FROM users
+            ORDER BY id ASC
+        """)).all()
     return [tuple(r) for r in rows]
+
+def require_role(*roles: str) -> bool:
+    """คืน True ถ้าผู้ใช้ล็อกอินและ role อยู่ในชุด roles"""
+    if not is_logged_in():
+        _show_login_required()
+        return False
+    return has_role(*roles)
+
+def is_user_expiring(days: int = 7) -> bool:
+    """True ถ้าจะหมดอายุภายใน N วัน (ใช้ทำแถบเตือนล่วงหน้า)"""
+    u = current_user()
+    if not u or not u.get("expiry_at"):
+        return False
+    try:
+        # ให้ Postgres เปรียบเทียบก็ได้ แต่ใน UI ใช้ประมาณคร่าว ๆ แบบ local ก็พอ
+        exp = u["expiry_at"]
+        # ถ้า exp เป็น str จาก DB-API อาจต้องแปลงก่อน (แต่ SQLAlchemy มักคืน datetime แล้ว)
+        if isinstance(exp, str):
+            from dateutil import parser
+            exp = parser.parse(exp)
+        remain = exp - datetime.datetime.utcnow()
+        return remain.total_seconds() <= days * 86400
+    except Exception:
+        return False
 
 # ---------------------------------------------
 # SESSION & UI HELPERS (ใหม่)
@@ -193,7 +285,12 @@ def login_box():
         left, right = st.columns([4,1])
         with left:
             u = current_user()
-            st.caption(f"👤 {u['username']} ({u['role']})")
+            # โชว์วันหมดอายุ (ถ้ามี) ให้รู้สถานะ
+            exp = u.get("expiry_at")
+            if exp:
+                st.caption(f"👤 {u['username']} ({u['role']}) • หมดอายุ: {exp}")
+            else:
+                st.caption(f"👤 {u['username']} ({u['role']})")
         with right:
             if st.button("ออกจากระบบ"):
                 logout()
@@ -239,12 +336,20 @@ def login_box():
     with c3:
         st.write("")  # spacer
         if st.button("เข้าสู่ระบบ", type="primary"):
-            user = verify_login(username.strip(), password)
-            if user:
+            user, err = verify_login(username.strip(), password)   # <<<<<< รับ 2 ค่า
+            if user and not err:
+                # เก็บข้อมูลผู้ใช้ + วัน/เวลา login
                 st.session_state.auth["logged_in"] = True
-                st.session_state.auth["user"] = user
+                st.session_state.auth["user"] = user   # มี expiry_at มาด้วยแล้ว
                 st.session_state.auth["at"] = datetime.datetime.utcnow().isoformat()
                 st.success("เข้าสู่ระบบสำเร็จ")
                 st.rerun()
             else:
-                st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                if err == "expired":
+                    st.error(
+                        f"บัญชีหมดอายุการใช้งานแล้ว — กรุณาติดต่อ "
+                        f"<a href='{FB_LINK}' target='_blank'>FB: Tarot Trader</a>",
+                        icon="⏳"
+                    )
+                else:
+                    st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
