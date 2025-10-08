@@ -68,6 +68,8 @@ with st.sidebar:
 
     # เฉพาะ Admin: Users
     if is_logged_in and user_role == "admin":
+        if st.button("🧙‍♂️ เมอร์ลิน (Admin)", use_container_width=True):
+            _goto("merlin")
         if st.button("👤 Users", use_container_width=True):
             _goto("users")
 
@@ -187,6 +189,10 @@ elif page == "port":
     if auth.require_login_or_public("private"):  # ไม่ล็อกอินจะแจ้งเตือนและไม่เรนเดอร์
         # st.subheader("📊 Portfolio")
         port_index.render_port_page()
+        
+elif page == "merlin":
+    import merlin_index
+    merlin_index.render_page()
 
 # ---------- หน้า Users (admin only) ----------
 elif page == "users":
