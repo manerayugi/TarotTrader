@@ -138,7 +138,7 @@ if page == "login":
         st.divider()
 
     # ====== ฟอร์ม Login (จัดกลางแบบ 2–1–2 + ปุ่มกลาง) ======
-    col_left, col_center, col_right = st.columns([2, 1.4, 2])
+    col_left, col_center, col_right = st.columns([2, 2, 2])
     with col_center:
         # โลโก้ + ชื่อเพจ
         logo_path = "assets/logo.png"
