@@ -308,3 +308,40 @@ def _hrr():
         "</div>",
         unsafe_allow_html=True
     )
+
+# --- ใหม่: ใช้ได้ทุกหน้า ---
+def center_latex(expr: str) -> None:
+    """แสดง LaTeX แบบจัดกลาง (ใช้ซ้ำได้ทุกหน้า)"""
+    st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
+    st.latex(expr)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def info_box(html: str) -> None:
+    """กล่องข้อความสรุป/คำอธิบาย (รับ HTML markdown)"""
+    st.markdown(
+        f"""
+        <div style="border:1px solid #666;padding:12px 14px;border-radius:10px;
+                    background:#202020;color:#e5e7eb;">
+          {html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def grid_entries(
+    current_price: float,
+    n_orders: int,
+    step_points: float,
+    price_point: float,
+    side: str,
+) -> List[float]:
+    """
+    สร้างราคาเข้าแบบกริดคงที่ N ไม้ เว้นระยะเท่ากัน:
+      - side="LONG"  → ลดลงทีละ step
+      - side="SHORT" → เพิ่มขึ้นทีละ step
+    """
+    if n_orders <= 0:
+        return []
+    step_price = float(step_points) * float(price_point)
+    sgn = -1.0 if side.upper() == "LONG" else 1.0
+    return [round(float(current_price) + sgn * i * step_price, 2) for i in range(n_orders)]
