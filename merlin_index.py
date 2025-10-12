@@ -5,6 +5,7 @@ from func import _hr
 
 from merlin_jarvis import render_jarvis_tab
 from merlin_gtt import render_gtt_tab
+from merlin_atm import render_atm_tab
 
 
 def _go_login():
@@ -36,8 +37,10 @@ def render_page():
     _hr(420)
 
     # Tabs
-    tab1, tab2 = st.tabs(["🤖 จาวิส", "🜏 GTT — Gemini Tenebris Theoria"])
+    tab1, tab2, tab3 = st.tabs(["🤖 จาวิส", "🜏 GTT — Gemini Tenebris Theoria", "🪙 ATM"])
     with tab1:
         render_jarvis_tab()
     with tab2:
         render_gtt_tab(default_mode="Normal")  # 👉 เปิด GTT แบบ Normal ก่อน
+    with tab3:
+        render_atm_tab()
