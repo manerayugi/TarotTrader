@@ -1,14 +1,15 @@
 # ===== Core App =====
 streamlit==1.37.1
 pandas==2.2.2
+numpy==1.26.4
 
-# ===== DB/Auth =====
+# ===== Database / Auth (optional, enable if using user login or saving sessions) =====
 sqlalchemy==2.0.32
 psycopg2-binary==2.9.9
 bcrypt==4.1.3
 
-# ===== Data Fetch / Finance =====
+# ===== Financial Data Fetch =====
 yfinance>=0.2.66
 
-# ===== Typing Helpers =====
-typing-extensions==4.11.0
+# ===== Typing / Utilities =====
+typing-extensions>=4.11.0

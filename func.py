@@ -1,10 +1,15 @@
 # func.py
 from __future__ import annotations
+
 import os, base64, mimetypes
 import streamlit as st
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 import re
+
+import math
+import numpy as np
+import pandas as pd
 
 def center_image_safe(path: str, caption: str = None, width: int = 480):
     """แสดงรูปแบบกึ่งกลาง + แคปชันกึ่งกลาง (เรนเดอร์ครั้งเดียว)"""
@@ -345,3 +350,101 @@ def grid_entries(
     step_price = float(step_points) * float(price_point)
     sgn = -1.0 if side.upper() == "LONG" else 1.0
     return [round(float(current_price) + sgn * i * step_price, 2) for i in range(n_orders)]
+
+
+
+
+# ========= UI Helpers =========
+def hr(width: int = 360):
+    st.markdown(
+        f"<div style='text-align:center;margin:10px 0'>"
+        f"<hr style='width:{width}px;border:1px solid #666;'/></div>",
+        unsafe_allow_html=True
+    )
+
+def header(title: str, subtitle: str = ""):
+    st.markdown(
+        f"""
+        <div style='display:flex;align-items:baseline;gap:10px;'>
+          <h3 style='margin:0;'>{title}</h3>
+          <span style='color:#aaa;font-size:0.9rem;'>{subtitle}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ========= Math / Grid =========
+def round_to(x: float, base: int) -> int:
+    """ปัดค่าเป็น step ที่ต้องการ เช่น base=50 → 50, 100, 150,..."""
+    if base <= 0:
+        return int(round(x))
+    return int(round(x / base) * base)
+
+def grid_levels(ref_price: float, n_orders: int, spacing_pts: int,
+                direction: str = "LONG", point_value: float = 0.01) -> List[float]:
+    """สร้างราคาเข้าแบบกริด: LONG = ลดลงทีละ spacing, SHORT = เพิ่มขึ้นทีละ spacing (points)"""
+    if n_orders <= 0:
+        return []
+    step = float(spacing_pts) * float(point_value)
+    sgn = -1.0 if direction.upper().startswith("LONG") else 1.0
+    return [round(ref_price + sgn * i * step, 2) for i in range(int(n_orders))]
+
+def last_feasible_index(values: List[float], budget: float) -> int | None:
+    """คืน index สุดท้ายที่ค่าจาก values <= budget (ใช้ดูว่าเปิดได้กี่ไม้โดยมาร์จิ้นรวมไม่เกินทุน)"""
+    last = None
+    for i, v in enumerate(values):
+        if v <= budget:
+            last = i
+    return last
+
+
+# ========= Data prep / Volatility =========
+def ensure_ohlc_columns(df: pd.DataFrame, point_value: float = 0.01) -> pd.DataFrame:
+    """เติมคอลัมน์พื้นฐานที่ต้องใช้ (date, range_point, TR_point) สำหรับโหมด CSV"""
+    df = df.copy()
+
+    # date
+    if "date" not in df.columns:
+        if "time" in df.columns:
+            df["date"] = pd.to_datetime(df["time"], unit="s")
+        else:
+            for cand in ["Date", "datetime", "timestamp"]:
+                if cand in df.columns:
+                    df["date"] = pd.to_datetime(df[cand])
+                    break
+            if "date" not in df.columns:
+                raise ValueError("ไม่พบคอลัมน์ date/time ในไฟล์")
+
+    # ohlc
+    required = {"high", "low", "close"}
+    if not required.issubset(df.columns):
+        miss = ", ".join(sorted(list(required - set(df.columns))))
+        raise ValueError(f"ไฟล์ต้องมีคอลัมน์ {miss}")
+
+    # range → points
+    if "range" not in df.columns:
+        df["range"] = df["high"] - df["low"]
+    if "range_point" not in df.columns:
+        df["range_point"] = (df["range"] / float(point_value)).astype(float)
+
+    # TR → points
+    if "prev_close" not in df.columns:
+        df["prev_close"] = df["close"].shift(1)
+    tr = np.maximum.reduce([
+        (df["high"] - df["low"]).abs(),
+        (df["high"] - df["prev_close"]).abs(),
+        (df["low"] - df["prev_close"]).abs()
+    ])
+    df["TR_point"] = (tr / float(point_value)).astype(float)
+    return df
+
+def atr_points(df: pd.DataFrame, window: int = 14, method: str = "RMA") -> pd.Series:
+    """คืนค่า ATR (หน่วย points) method: 'SMA' | 'EMA' | 'RMA'."""
+    s = df["TR_point"]
+    m = method.upper()
+    if m == "EMA":
+        return s.ewm(span=window, adjust=False).mean()
+    if m == "RMA":
+        return s.ewm(alpha=1/window, adjust=False).mean()  # Wilder
+    return s.rolling(window=window, min_periods=1).mean()
